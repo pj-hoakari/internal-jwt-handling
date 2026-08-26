@@ -1,0 +1,5 @@
+[tools]
+betterleaks = "latest"
+go = "1.26"
+golangci-lint = "v2.12.2"
+lefthook = "latest"
