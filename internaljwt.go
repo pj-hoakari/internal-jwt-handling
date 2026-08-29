@@ -64,27 +64,36 @@ type JWK struct {
 
 const uncompressedP256Length = 65
 
+// Errors NewJWK returns.
+var (
+	ErrMissingKeyID        = errors.New("key ID is required")
+	ErrMissingKey          = errors.New("public key is required")
+	ErrUnsupportedCurve    = errors.New("unsupported curve: internal JWT keys are P-256")
+	ErrUnexpectedKeyLength = errors.New("unexpected P-256 public key length")
+	ErrEncodeKey           = errors.New("encode public key")
+)
+
 // NewJWK describes an ES256 verification key as a JWK.
 func NewJWK(keyID string, key *ecdsa.PublicKey) (JWK, error) {
 	if keyID == "" {
-		return JWK{}, errors.New("key ID is required")
+		return JWK{}, ErrMissingKeyID
 	}
 
 	if key == nil {
-		return JWK{}, errors.New("public key is required")
+		return JWK{}, ErrMissingKey
 	}
 
 	if key.Curve != elliptic.P256() {
-		return JWK{}, fmt.Errorf("unsupported curve %q: internal JWT keys are P-256", CurveName(key.Curve))
+		return JWK{}, fmt.Errorf("%w: got %q", ErrUnsupportedCurve, CurveName(key.Curve))
 	}
 
 	encoded, err := key.Bytes()
 	if err != nil {
-		return JWK{}, fmt.Errorf("encode public key: %w", err)
+		return JWK{}, fmt.Errorf("%w: %w", ErrEncodeKey, err)
 	}
 
 	if len(encoded) != uncompressedP256Length {
-		return JWK{}, fmt.Errorf("unexpected P-256 public key length %d", len(encoded))
+		return JWK{}, fmt.Errorf("%w: got %d, want %d", ErrUnexpectedKeyLength, len(encoded), uncompressedP256Length)
 	}
 
 	return JWK{

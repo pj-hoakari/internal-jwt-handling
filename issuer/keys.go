@@ -23,6 +23,17 @@ const (
 	pemTypePublicKey    = "PUBLIC KEY"
 )
 
+// Key file errors NewFileKeyProvider returns.
+var (
+	ErrMissingPublishedKeyID = errors.New("published key ID is required")
+	ErrMissingKeyFilePath    = errors.New("key file path is required")
+	ErrReadKeyFile           = errors.New("read key file")
+	ErrNoPEMBlock            = errors.New("key file holds no PEM block")
+	ErrUnsupportedPEMBlock   = errors.New("unsupported PEM block")
+	ErrParseKey              = errors.New("parse key")
+	ErrUnsupportedKeyType    = errors.New("unsupported key type: internal JWT keys are ECDSA keys")
+)
+
 type SigningKey struct {
 	KeyID string
 	Key   *ecdsa.PrivateKey
@@ -143,7 +154,7 @@ func (p *FileKeyProvider) currentLocked() KeySet {
 
 func (p *FileKeyProvider) load(ctx context.Context) (KeySet, error) {
 	if p.signing.KeyID == "" {
-		return KeySet{}, errors.New("signing key ID is required")
+		return KeySet{}, ErrMissingSigningKeyID
 	}
 
 	signingKey, err := readPrivateKeyFile(p.signing.Path)
@@ -156,12 +167,12 @@ func (p *FileKeyProvider) load(ctx context.Context) (KeySet, error) {
 
 	for _, file := range p.published {
 		if file.KeyID == "" {
-			return KeySet{}, errors.New("published key ID is required")
+			return KeySet{}, ErrMissingPublishedKeyID
 		}
 
 		// A kid must name one key.
 		if _, duplicate := seen[file.KeyID]; duplicate {
-			return KeySet{}, fmt.Errorf("duplicate key ID %q", file.KeyID)
+			return KeySet{}, fmt.Errorf("%w: %q", ErrDuplicateKeyID, file.KeyID)
 		}
 
 		publicKey, err := readPublicKeyFile(ctx, file)
@@ -191,7 +202,7 @@ func readPrivateKeyFile(path string) (*ecdsa.PrivateKey, error) {
 	}
 
 	if key.Curve != elliptic.P256() {
-		return nil, fmt.Errorf("unsupported curve %q: internal JWTs are signed with P-256 keys", internaljwt.CurveName(key.Curve))
+		return nil, fmt.Errorf("%w: got %q", internaljwt.ErrUnsupportedCurve, internaljwt.CurveName(key.Curve))
 	}
 
 	return key, nil
@@ -219,7 +230,7 @@ func readPublicKeyFile(ctx context.Context, file KeyFile) (*ecdsa.PublicKey, err
 	}
 
 	if key.Curve != elliptic.P256() {
-		return nil, fmt.Errorf("unsupported curve %q: internal JWT keys are P-256", internaljwt.CurveName(key.Curve))
+		return nil, fmt.Errorf("%w: got %q", internaljwt.ErrUnsupportedCurve, internaljwt.CurveName(key.Curve))
 	}
 
 	return key, nil
@@ -227,17 +238,17 @@ func readPublicKeyFile(ctx context.Context, file KeyFile) (*ecdsa.PublicKey, err
 
 func readPEMFile(path string) (*pem.Block, error) {
 	if path == "" {
-		return nil, errors.New("key file path is required")
+		return nil, ErrMissingKeyFilePath
 	}
 
 	encoded, err := os.ReadFile(path) //nolint:gosec // operator-configured key file path
 	if err != nil {
-		return nil, fmt.Errorf("read key file: %w", err)
+		return nil, fmt.Errorf("%w %q: %w", ErrReadKeyFile, path, err)
 	}
 
 	block, _ := pem.Decode(encoded)
 	if block == nil {
-		return nil, errors.New("key file holds no PEM block")
+		return nil, ErrNoPEMBlock
 	}
 
 	return block, nil
@@ -248,24 +259,24 @@ func parsePrivateKey(block *pem.Block) (*ecdsa.PrivateKey, error) {
 	case pemTypeECPrivateKey:
 		key, err := x509.ParseECPrivateKey(block.Bytes)
 		if err != nil {
-			return nil, fmt.Errorf("parse SEC1 private key: %w", err)
+			return nil, fmt.Errorf("%w: SEC1 private key: %w", ErrParseKey, err)
 		}
 
 		return key, nil
 	case pemTypePrivateKey:
 		parsed, err := x509.ParsePKCS8PrivateKey(block.Bytes)
 		if err != nil {
-			return nil, fmt.Errorf("parse PKCS#8 private key: %w", err)
+			return nil, fmt.Errorf("%w: PKCS#8 private key: %w", ErrParseKey, err)
 		}
 
 		key, ok := parsed.(*ecdsa.PrivateKey)
 		if !ok {
-			return nil, fmt.Errorf("unsupported private key type %T: internal JWTs are signed with ECDSA keys", parsed)
+			return nil, fmt.Errorf("%w: got %T", ErrUnsupportedKeyType, parsed)
 		}
 
 		return key, nil
 	default:
-		return nil, fmt.Errorf("unsupported PEM block %q: expected %q or %q", block.Type, pemTypeECPrivateKey, pemTypePrivateKey)
+		return nil, fmt.Errorf("%w %q: expected %q or %q", ErrUnsupportedPEMBlock, block.Type, pemTypeECPrivateKey, pemTypePrivateKey)
 	}
 }
 
@@ -273,20 +284,21 @@ func parsePublicKey(block *pem.Block) (*ecdsa.PublicKey, error) {
 	if block.Type == pemTypePublicKey {
 		parsed, err := x509.ParsePKIXPublicKey(block.Bytes)
 		if err != nil {
-			return nil, fmt.Errorf("parse PKIX public key: %w", err)
+			return nil, fmt.Errorf("%w: PKIX public key: %w", ErrParseKey, err)
 		}
 
 		key, ok := parsed.(*ecdsa.PublicKey)
 		if !ok {
-			return nil, fmt.Errorf("unsupported public key type %T: internal JWT keys are ECDSA keys", parsed)
+			return nil, fmt.Errorf("%w: got %T", ErrUnsupportedKeyType, parsed)
 		}
 
 		return key, nil
 	}
 
+	// The public half of a private key serves as well.
 	privateKey, err := parsePrivateKey(block)
 	if err != nil {
-		return nil, fmt.Errorf("unsupported PEM block %q: expected %q, a private key, or: %w", block.Type, pemTypePublicKey, err)
+		return nil, fmt.Errorf("expected %q or a private key: %w", pemTypePublicKey, err)
 	}
 
 	return &privateKey.PublicKey, nil

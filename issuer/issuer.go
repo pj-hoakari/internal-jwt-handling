@@ -16,6 +16,65 @@ import (
 // DefaultTTL is the lifetime of an internal JWT.
 const DefaultTTL = 120 * time.Second
 
+// Configuration errors New returns.
+var (
+	ErrMissingIssuerID    = errors.New("issuer ID is required")
+	ErrMissingKeyProvider = errors.New("key provider is required")
+	ErrNonPositiveTTL     = errors.New("TTL must be positive")
+	ErrMissingClock       = errors.New("clock is required")
+)
+
+// Input errors the Issue methods return.
+var (
+	ErrMissingAudience      = errors.New("audience is required")
+	ErrMissingCallerService = errors.New("caller service is required")
+
+	// Entrance conversion.
+	ErrMissingSubject      = errors.New("subject is required")
+	ErrMissingClientID     = errors.New("client ID is required")
+	ErrMissingScope        = errors.New("scope is required for an entrance conversion")
+	ErrMissingSourceJTI    = errors.New("source jti is required for an entrance conversion")
+	ErrMissingSourceExpiry = errors.New("source token expiry is required for an entrance conversion")
+	ErrSourceExpired       = errors.New("source token expiry must be in the future")
+	ErrEntranceService     = errors.New("service tokens are re-issued from a context token, not converted at an entrance")
+
+	// Binding claims a token_use requires and forbids.
+	ErrUnsupportedTokenUse       = errors.New("unsupported token use")
+	ErrMissingTenantPublicID     = errors.New("tenant public ID is required")
+	ErrMissingEventPublicID      = errors.New("event public ID is required")
+	ErrForbiddenEventPublicID    = errors.New("must not carry an event public ID")
+	ErrRegistrationBinding       = errors.New("registration must not carry a tenant or event public ID")
+	ErrServiceEventWithoutTenant = errors.New("a service token carrying an event public ID must carry a tenant public ID")
+
+	// Context token of a service re-issue.
+	ErrContextMissingExpiry    = errors.New("context token exp is required")
+	ErrContextExpired          = errors.New("context token has expired")
+	ErrContextAudienceMismatch = errors.New("context token audience does not name the calling service")
+	ErrContextMissingTxn       = errors.New("context token txn is required")
+	ErrContextMissingJTI       = errors.New("context token jti is required")
+	ErrContextMissingSubject   = errors.New("context token subject is required")
+	ErrContextMissingScope     = errors.New("context token scope is required for a user-origin re-issue")
+	ErrContextMissingSourceJTI = errors.New("context token src_jti is required for a user-origin re-issue")
+	ErrContextNotUserOrigin    = errors.New("a service context token without origin_sub is not user-origin")
+
+	// Context token of a machine-origin re-issue.
+	ErrMachineContextNotService     = errors.New("a machine-origin context token must be a service token")
+	ErrMachineContextCarriesOrigin  = errors.New("a machine-origin context token must carry none of scope, src_jti, and origin_sub")
+	ErrMachineContextCarriesBinding = errors.New("a machine-origin context token must carry neither tenant nor event public ID")
+)
+
+// Key and signing errors the Issue methods and JWKS return.
+var (
+	ErrKeyProvider         = errors.New("load signing keys")
+	ErrMissingSigningKeyID = errors.New("signing key ID is required")
+	ErrMissingSigningKey   = errors.New("signing key is required")
+	ErrDuplicateKeyID      = errors.New("duplicate key ID")
+	ErrDescribeKey         = errors.New("describe key as JWK")
+	ErrGenerateID          = errors.New("generate identifier")
+	ErrAudienceCount       = errors.New("an internal JWT names exactly one audience")
+	ErrSign                = errors.New("sign internal JWT")
+)
+
 // Issuer signs internal JWTs.
 type Issuer struct {
 	issuerID string
@@ -45,11 +104,11 @@ func WithClock(now func() time.Time) Option {
 // New builds an issuer that signs with the keys the provider supplies and names itself with issuerID.
 func New(issuerID string, keys KeyProvider, opts ...Option) (*Issuer, error) {
 	if issuerID == "" {
-		return nil, errors.New("issuer ID is required")
+		return nil, ErrMissingIssuerID
 	}
 
 	if keys == nil {
-		return nil, errors.New("key provider is required")
+		return nil, ErrMissingKeyProvider
 	}
 
 	issuer := &Issuer{
@@ -64,11 +123,11 @@ func New(issuerID string, keys KeyProvider, opts ...Option) (*Issuer, error) {
 	}
 
 	if issuer.ttl <= 0 {
-		return nil, errors.New("TTL must be positive")
+		return nil, ErrNonPositiveTTL
 	}
 
 	if issuer.now == nil {
-		return nil, errors.New("clock is required")
+		return nil, ErrMissingClock
 	}
 
 	return issuer, nil
@@ -115,13 +174,13 @@ func (i *Issuer) IssueEntrance(ctx context.Context, input EntranceInput) (Issued
 
 	txn, err := uuid.NewV7()
 	if err != nil {
-		return Issued{}, fmt.Errorf("generate txn: %w", err)
+		return Issued{}, fmt.Errorf("%w txn: %w", ErrGenerateID, err)
 	}
 
 	now := i.now()
 
 	if !input.SourceExpiresAt.After(now) {
-		return Issued{}, errors.New("source token expiry must be in the future")
+		return Issued{}, ErrSourceExpired
 	}
 
 	expiresAt := now.Add(i.ttl)
@@ -214,11 +273,11 @@ func (i *Issuer) IssueMachineOriginService(ctx context.Context, input MachineOri
 func (i *Issuer) JWKS(ctx context.Context) (internaljwt.JWKS, error) {
 	keys, err := i.keys.Current(ctx)
 	if err != nil {
-		return internaljwt.JWKS{}, fmt.Errorf("load signing keys: %w", err)
+		return internaljwt.JWKS{}, fmt.Errorf("%w: %w", ErrKeyProvider, err)
 	}
 
 	if keys.Signing.Key == nil {
-		return internaljwt.JWKS{}, errors.New("signing key is required")
+		return internaljwt.JWKS{}, ErrMissingSigningKey
 	}
 
 	jwks := internaljwt.JWKS{Keys: make([]internaljwt.JWK, 0, len(keys.Published)+1)}
@@ -226,7 +285,7 @@ func (i *Issuer) JWKS(ctx context.Context) (internaljwt.JWKS, error) {
 
 	signing, err := internaljwt.NewJWK(keys.Signing.KeyID, &keys.Signing.Key.PublicKey)
 	if err != nil {
-		return internaljwt.JWKS{}, fmt.Errorf("describe signing key: %w", err)
+		return internaljwt.JWKS{}, fmt.Errorf("%w: signing key %q: %w", ErrDescribeKey, keys.Signing.KeyID, err)
 	}
 
 	jwks.Keys = append(jwks.Keys, signing)
@@ -236,12 +295,12 @@ func (i *Issuer) JWKS(ctx context.Context) (internaljwt.JWKS, error) {
 		// A kid must name one key.
 		// A duplicate would leave a verifier picking between two keys for the same identifier
 		if _, duplicate := seen[published.KeyID]; duplicate {
-			return internaljwt.JWKS{}, fmt.Errorf("duplicate JWKS key ID %q", published.KeyID)
+			return internaljwt.JWKS{}, fmt.Errorf("%w in JWKS: %q", ErrDuplicateKeyID, published.KeyID)
 		}
 
 		key, err := internaljwt.NewJWK(published.KeyID, published.Key)
 		if err != nil {
-			return internaljwt.JWKS{}, fmt.Errorf("describe published key %q: %w", published.KeyID, err)
+			return internaljwt.JWKS{}, fmt.Errorf("%w: published key %q: %w", ErrDescribeKey, published.KeyID, err)
 		}
 
 		jwks.Keys = append(jwks.Keys, key)
@@ -255,7 +314,7 @@ func (i *Issuer) JWKS(ctx context.Context) (internaljwt.JWKS, error) {
 func (i *Issuer) registeredClaims(audience, subject string, now, expiresAt time.Time) (jwt.RegisteredClaims, error) {
 	jti, err := uuid.NewV7()
 	if err != nil {
-		return jwt.RegisteredClaims{}, fmt.Errorf("generate jti: %w", err)
+		return jwt.RegisteredClaims{}, fmt.Errorf("%w jti: %w", ErrGenerateID, err)
 	}
 
 	return jwt.RegisteredClaims{
@@ -300,7 +359,7 @@ func (c signedClaims) GetIssuedAt() (*jwt.NumericDate, error)       { return c.I
 // newSignedClaims puts the claim set into its wire form.
 func newSignedClaims(claims internaljwt.Claims) (signedClaims, error) {
 	if len(claims.Audience) != 1 {
-		return signedClaims{}, fmt.Errorf("an internal JWT names exactly one audience, got %d", len(claims.Audience))
+		return signedClaims{}, fmt.Errorf("%w, got %d", ErrAudienceCount, len(claims.Audience))
 	}
 
 	return signedClaims{
@@ -331,15 +390,15 @@ func (i *Issuer) sign(ctx context.Context, claims internaljwt.Claims) (Issued, e
 
 	keys, err := i.keys.Current(ctx)
 	if err != nil {
-		return Issued{}, fmt.Errorf("load signing key: %w", err)
+		return Issued{}, fmt.Errorf("%w: %w", ErrKeyProvider, err)
 	}
 
 	if keys.Signing.KeyID == "" {
-		return Issued{}, errors.New("signing key ID is required")
+		return Issued{}, ErrMissingSigningKeyID
 	}
 
 	if keys.Signing.Key == nil {
-		return Issued{}, errors.New("signing key is required")
+		return Issued{}, ErrMissingSigningKey
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodES256, signable)
@@ -347,7 +406,7 @@ func (i *Issuer) sign(ctx context.Context, claims internaljwt.Claims) (Issued, e
 
 	signed, err := token.SignedString(keys.Signing.Key)
 	if err != nil {
-		return Issued{}, fmt.Errorf("sign internal JWT: %w", err)
+		return Issued{}, fmt.Errorf("%w: %w", ErrSign, err)
 	}
 
 	return Issued{Token: signed, Claims: claims}, nil
@@ -361,7 +420,7 @@ func machineOriginTxn(context *internaljwt.Claims) (string, error) {
 
 	txn, err := uuid.NewV7()
 	if err != nil {
-		return "", fmt.Errorf("generate txn: %w", err)
+		return "", fmt.Errorf("%w txn: %w", ErrGenerateID, err)
 	}
 
 	return txn.String(), nil
@@ -371,27 +430,27 @@ func machineOriginTxn(context *internaljwt.Claims) (string, error) {
 // claims its token_use requires and forbids
 func validateEntrance(input EntranceInput) error {
 	if input.Audience == "" {
-		return errors.New("audience is required")
+		return ErrMissingAudience
 	}
 
 	if input.Subject == "" {
-		return errors.New("subject is required")
+		return ErrMissingSubject
 	}
 
 	if input.ClientID == "" {
-		return errors.New("client ID is required")
+		return ErrMissingClientID
 	}
 
 	if input.Scope == "" {
-		return errors.New("scope is required for an entrance conversion")
+		return ErrMissingScope
 	}
 
 	if input.SourceJTI == "" {
-		return errors.New("source jti is required for an entrance conversion")
+		return ErrMissingSourceJTI
 	}
 
 	if input.SourceExpiresAt.IsZero() {
-		return errors.New("source token expiry is required for an entrance conversion")
+		return ErrMissingSourceExpiry
 	}
 
 	return validateEntranceBinding(input)
@@ -401,7 +460,7 @@ func validateEntrance(input EntranceInput) error {
 // conversion must and must not carry.
 func validateEntranceBinding(input EntranceInput) error {
 	if input.TokenUse == internaljwt.TokenUseService {
-		return errors.New("service tokens are re-issued from a context token, not converted at an entrance")
+		return ErrEntranceService
 	}
 
 	return validateBinding(input.TokenUse, input.TenantPublicID, input.EventPublicID)
@@ -412,30 +471,30 @@ func validateBinding(tokenUse, tenantPublicID, eventPublicID string) error {
 	switch tokenUse {
 	case internaljwt.TokenUseTenantAccess:
 		if tenantPublicID == "" {
-			return errors.New("tenant public ID is required for tenant_access")
+			return fmt.Errorf("%w for %s", ErrMissingTenantPublicID, tokenUse)
 		}
 
 		if eventPublicID != "" {
-			return errors.New("tenant_access must not carry an event public ID")
+			return fmt.Errorf("%s %w", tokenUse, ErrForbiddenEventPublicID)
 		}
 	case internaljwt.TokenUseEventAccess:
 		if tenantPublicID == "" {
-			return errors.New("tenant public ID is required for event_access")
+			return fmt.Errorf("%w for %s", ErrMissingTenantPublicID, tokenUse)
 		}
 
 		if eventPublicID == "" {
-			return errors.New("event public ID is required for event_access")
+			return fmt.Errorf("%w for %s", ErrMissingEventPublicID, tokenUse)
 		}
 	case internaljwt.TokenUseRegistration:
 		if tenantPublicID != "" || eventPublicID != "" {
-			return errors.New("registration must not carry a tenant or event public ID")
+			return ErrRegistrationBinding
 		}
 	case internaljwt.TokenUseService:
 		if eventPublicID != "" && tenantPublicID == "" {
-			return errors.New("a service token carrying an event public ID must carry a tenant public ID")
+			return ErrServiceEventWithoutTenant
 		}
 	default:
-		return fmt.Errorf("unsupported token use %q", tokenUse)
+		return fmt.Errorf("%w %q", ErrUnsupportedTokenUse, tokenUse)
 	}
 
 	return nil
@@ -443,15 +502,15 @@ func validateBinding(tokenUse, tenantPublicID, eventPublicID string) error {
 
 func validateContextToken(context internaljwt.Claims, callerService string, now time.Time) error {
 	if context.ExpiresAt == nil {
-		return errors.New("context token exp is required")
+		return ErrContextMissingExpiry
 	}
 
 	if !context.ExpiresAt.After(now) {
-		return errors.New("context token has expired")
+		return ErrContextExpired
 	}
 
 	if !slices.Contains(context.Audience, callerService) {
-		return fmt.Errorf("context token audience %v does not name the calling service %q", context.Audience, callerService)
+		return fmt.Errorf("%w: audience %v, caller %q", ErrContextAudienceMismatch, context.Audience, callerService)
 	}
 
 	return nil
@@ -459,11 +518,11 @@ func validateContextToken(context internaljwt.Claims, callerService string, now 
 
 func validateUserOriginService(input UserOriginServiceInput, now time.Time) error {
 	if input.Audience == "" {
-		return errors.New("audience is required")
+		return ErrMissingAudience
 	}
 
 	if input.CallerService == "" {
-		return errors.New("caller service is required")
+		return ErrMissingCallerService
 	}
 
 	if err := validateContextToken(input.Context, input.CallerService, now); err != nil {
@@ -475,23 +534,23 @@ func validateUserOriginService(input UserOriginServiceInput, now time.Time) erro
 	}
 
 	if input.Context.Scope == "" {
-		return errors.New("context token scope is required for a user-origin re-issue")
+		return ErrContextMissingScope
 	}
 
 	if input.Context.Txn == "" {
-		return errors.New("context token txn is required")
+		return ErrContextMissingTxn
 	}
 
 	if input.Context.SourceJTI == "" {
-		return errors.New("context token src_jti is required for a user-origin re-issue")
+		return ErrContextMissingSourceJTI
 	}
 
 	if input.Context.ID == "" {
-		return errors.New("context token jti is required")
+		return ErrContextMissingJTI
 	}
 
 	if input.Context.Subject == "" {
-		return errors.New("context token subject is required")
+		return ErrContextMissingSubject
 	}
 
 	return nil
@@ -502,10 +561,10 @@ func validateUserOriginContextUse(context internaljwt.Claims) error {
 	case internaljwt.TokenUseTenantAccess, internaljwt.TokenUseEventAccess, internaljwt.TokenUseRegistration:
 	case internaljwt.TokenUseService:
 		if context.OriginSub == "" {
-			return errors.New("a service context token without origin_sub is not user-origin")
+			return ErrContextNotUserOrigin
 		}
 	default:
-		return fmt.Errorf("unsupported context token use %q", context.TokenUse)
+		return fmt.Errorf("context token: %w %q", ErrUnsupportedTokenUse, context.TokenUse)
 	}
 
 	if err := validateBinding(context.TokenUse, context.TenantPublicID, context.EventPublicID); err != nil {
@@ -517,11 +576,11 @@ func validateUserOriginContextUse(context internaljwt.Claims) error {
 
 func validateMachineOriginService(input MachineOriginServiceInput, now time.Time) error {
 	if input.Audience == "" {
-		return errors.New("audience is required")
+		return ErrMissingAudience
 	}
 
 	if input.CallerService == "" {
-		return errors.New("caller service is required")
+		return ErrMissingCallerService
 	}
 
 	// A new machine origin presents no context token at all.
@@ -534,19 +593,19 @@ func validateMachineOriginService(input MachineOriginServiceInput, now time.Time
 	}
 
 	if input.Context.Txn == "" {
-		return errors.New("context token txn is required")
+		return ErrContextMissingTxn
 	}
 
 	if input.Context.TokenUse != internaljwt.TokenUseService {
-		return fmt.Errorf("a machine-origin context token must be a service token, got %q", input.Context.TokenUse)
+		return fmt.Errorf("%w, got %q", ErrMachineContextNotService, input.Context.TokenUse)
 	}
 
 	if input.Context.Scope != "" || input.Context.SourceJTI != "" || input.Context.OriginSub != "" {
-		return errors.New("a machine-origin context token must carry none of scope, src_jti, and origin_sub")
+		return ErrMachineContextCarriesOrigin
 	}
 
 	if input.Context.TenantPublicID != "" || input.Context.EventPublicID != "" {
-		return errors.New("a machine-origin context token must carry neither tenant nor event public ID")
+		return ErrMachineContextCarriesBinding
 	}
 
 	return nil

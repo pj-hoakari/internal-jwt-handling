@@ -1121,3 +1121,140 @@ func TestIssueMintsFreshIdentifiers(t *testing.T) {
 		t.Fatalf("collected %d jti and %d txn, want %d and %d", len(jtis), len(txns), issues*3, issues*2)
 	}
 }
+
+func TestNewReturnsConfigurationErrors(t *testing.T) {
+	t.Parallel()
+
+	provider := staticKeyProvider{keys: KeySet{}, err: nil}
+
+	tests := map[string]struct {
+		id   string
+		keys KeyProvider
+		opts []Option
+		want error
+	}{
+		"empty issuer ID": {id: "", keys: provider, opts: nil, want: ErrMissingIssuerID},
+		"nil provider":    {id: "gw", keys: nil, opts: nil, want: ErrMissingKeyProvider},
+		"zero TTL":        {id: "gw", keys: provider, opts: []Option{WithTTL(0)}, want: ErrNonPositiveTTL},
+		"nil clock":       {id: "gw", keys: provider, opts: []Option{WithClock(nil)}, want: ErrMissingClock},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			if _, err := New(test.id, test.keys, test.opts...); !errors.Is(err, test.want) {
+				t.Fatalf("New returned %v, want %v", err, test.want)
+			}
+		})
+	}
+}
+
+func TestIssueErrorsMatchTheirSentinels(t *testing.T) {
+	t.Parallel()
+
+	issuer := newTestIssuer(t)
+
+	tests := map[string]struct {
+		issue func() error
+		want  error
+	}{
+		"entrance without audience": {
+			issue: func() error {
+				input := validEntranceInput()
+				input.Audience = ""
+				_, err := issuer.IssueEntrance(t.Context(), input)
+
+				return err
+			},
+			want: ErrMissingAudience,
+		},
+		"entrance with an unknown token use": {
+			issue: func() error {
+				input := validEntranceInput()
+				input.TokenUse = "unknown"
+				_, err := issuer.IssueEntrance(t.Context(), input)
+
+				return err
+			},
+			want: ErrUnsupportedTokenUse,
+		},
+		"entrance with an expired source token": {
+			issue: func() error {
+				input := validEntranceInput()
+				input.SourceExpiresAt = fixedNow.Add(-time.Second)
+				_, err := issuer.IssueEntrance(t.Context(), input)
+
+				return err
+			},
+			want: ErrSourceExpired,
+		},
+		"user-origin re-issue from a context without exp": {
+			issue: func() error {
+				context := userOriginContext()
+				context.ExpiresAt = nil
+				_, err := issuer.IssueUserOriginService(t.Context(), UserOriginServiceInput{
+					Audience: "tolo-graph-authoring", CallerService: "tolo-observation", Context: context,
+				})
+
+				return err
+			},
+			want: ErrContextMissingExpiry,
+		},
+		"user-origin re-issue from a context missing its tenant": {
+			issue: func() error {
+				context := userOriginContext()
+				context.TokenUse = internaljwt.TokenUseTenantAccess
+				context.TenantPublicID = ""
+				_, err := issuer.IssueUserOriginService(t.Context(), UserOriginServiceInput{
+					Audience: "tolo-graph-authoring", CallerService: "tolo-observation", Context: context,
+				})
+
+				return err
+			},
+			want: ErrMissingTenantPublicID,
+		},
+		"machine-origin re-issue from a user context": {
+			issue: func() error {
+				context := userOriginContext()
+				_, err := issuer.IssueMachineOriginService(t.Context(), MachineOriginServiceInput{
+					Audience: "tolo-notification", CallerService: "tolo-observation", Context: &context,
+				})
+
+				return err
+			},
+			want: ErrMachineContextNotService,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			if err := test.issue(); !errors.Is(err, test.want) {
+				t.Fatalf("got %v, want %v", err, test.want)
+			}
+		})
+	}
+}
+
+func TestKeyProviderFailureIsWrapped(t *testing.T) {
+	t.Parallel()
+
+	cause := errors.New("no keys")
+	provider := staticKeyProvider{keys: KeySet{}, err: cause}
+
+	issuer, err := New("service-gateway", provider, WithClock(func() time.Time { return fixedNow }))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	_, err = issuer.IssueEntrance(t.Context(), validEntranceInput())
+	if !errors.Is(err, ErrKeyProvider) {
+		t.Fatalf("got %v, want %v", err, ErrKeyProvider)
+	}
+
+	if !errors.Is(err, cause) {
+		t.Fatal("the provider's failure is not reachable through the error chain")
+	}
+}

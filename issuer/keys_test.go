@@ -6,10 +6,13 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	internaljwt "github.com/pj-hoakari/internal-jwt-handling"
 )
 
 func writeFile(t *testing.T, path string, blockType string, der []byte) {
@@ -494,5 +497,81 @@ func TestFileKeyProviderWaitsOutTheIntervalAfterAFailure(t *testing.T) {
 
 	if !keys.Signing.Key.Equal(after) {
 		t.Fatal("the provider did not re-read once the interval had passed")
+	}
+}
+
+func TestFileKeyProviderErrorsMatchTheirSentinels(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	p256 := generateKey(t, elliptic.P256())
+	p384 := generateKey(t, elliptic.P384())
+
+	sec1P256 := filepath.Join(dir, "p256.pem")
+	sec1P384 := filepath.Join(dir, "p384.pem")
+	pkixP256 := filepath.Join(dir, "p256-pub.pem")
+	garbage := filepath.Join(dir, "garbage.pem")
+	certificate := filepath.Join(dir, "certificate.pem")
+
+	writeSEC1(t, sec1P256, p256)
+	writeSEC1(t, sec1P384, p384)
+	writePKIX(t, pkixP256, &p256.PublicKey)
+
+	if err := os.WriteFile(garbage, []byte("not a PEM file"), 0o600); err != nil {
+		t.Fatalf("write garbage: %v", err)
+	}
+
+	writeFile(t, certificate, "CERTIFICATE", []byte{1, 2, 3})
+
+	tests := map[string]struct {
+		config FileKeyProviderConfig
+		want   error
+	}{
+		"empty signing key ID": {
+			config: FileKeyProviderConfig{Signing: KeyFile{Path: sec1P256, KeyID: ""}, Published: nil, RefreshInterval: 0},
+			want:   ErrMissingSigningKeyID,
+		},
+		"empty signing path": {
+			config: FileKeyProviderConfig{Signing: KeyFile{Path: "", KeyID: "signing-1"}, Published: nil, RefreshInterval: 0},
+			want:   ErrMissingKeyFilePath,
+		},
+		"missing signing file": {
+			config: FileKeyProviderConfig{Signing: KeyFile{Path: filepath.Join(dir, "absent.pem"), KeyID: "signing-1"}, Published: nil, RefreshInterval: 0},
+			want:   os.ErrNotExist,
+		},
+		"signing file is not PEM": {
+			config: FileKeyProviderConfig{Signing: KeyFile{Path: garbage, KeyID: "signing-1"}, Published: nil, RefreshInterval: 0},
+			want:   ErrNoPEMBlock,
+		},
+		"signing PEM is a certificate": {
+			config: FileKeyProviderConfig{Signing: KeyFile{Path: certificate, KeyID: "signing-1"}, Published: nil, RefreshInterval: 0},
+			want:   ErrUnsupportedPEMBlock,
+		},
+		"signing key is P-384": {
+			config: FileKeyProviderConfig{Signing: KeyFile{Path: sec1P384, KeyID: "signing-1"}, Published: nil, RefreshInterval: 0},
+			want:   internaljwt.ErrUnsupportedCurve,
+		},
+		"empty published key ID": {
+			config: FileKeyProviderConfig{
+				Signing: KeyFile{Path: sec1P256, KeyID: "signing-1"}, Published: []KeyFile{{Path: pkixP256, KeyID: ""}}, RefreshInterval: 0,
+			},
+			want: ErrMissingPublishedKeyID,
+		},
+		"published key repeats the signing key ID": {
+			config: FileKeyProviderConfig{
+				Signing: KeyFile{Path: sec1P256, KeyID: "signing-1"}, Published: []KeyFile{{Path: pkixP256, KeyID: "signing-1"}}, RefreshInterval: 0,
+			},
+			want: ErrDuplicateKeyID,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			if _, err := NewFileKeyProvider(test.config); !errors.Is(err, test.want) {
+				t.Fatalf("got %v, want %v", err, test.want)
+			}
+		})
 	}
 }
