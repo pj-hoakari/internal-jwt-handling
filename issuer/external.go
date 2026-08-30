@@ -10,19 +10,19 @@ import (
 	internaljwt "github.com/pj-hoakari/internal-jwt-handling"
 )
 
-// Input errors IssueEntrance returns.
+// Input errors IssueFromExternal returns.
 var (
 	ErrMissingSubject      = errors.New("subject is required")
 	ErrMissingClientID     = errors.New("client ID is required")
-	ErrMissingScope        = errors.New("scope is required for an entrance conversion")
-	ErrMissingSourceJTI    = errors.New("source jti is required for an entrance conversion")
-	ErrMissingSourceExpiry = errors.New("source token expiry is required for an entrance conversion")
+	ErrMissingScope        = errors.New("scope is required for an external token conversion")
+	ErrMissingSourceJTI    = errors.New("source jti is required for an external token conversion")
+	ErrMissingSourceExpiry = errors.New("source token expiry is required for an external token conversion")
 	ErrSourceExpired       = errors.New("source token expiry must be in the future")
-	ErrEntranceService     = errors.New("service tokens are re-issued from a context token, not converted at an entrance")
+	ErrExternalService     = errors.New("service tokens are re-issued from a context token, not converted from an external token")
 )
 
-// EntranceInput describes the conversion of a verified external token into an internal one.
-type EntranceInput struct {
+// ExternalTokenInput describes the conversion of a verified external token into an internal one.
+type ExternalTokenInput struct {
 	Audience        string
 	TokenUse        string // tenant_access, event_access, or registration
 	Subject         string
@@ -34,11 +34,11 @@ type EntranceInput struct {
 	EventPublicID   string
 }
 
-// entranceClaims derives the claim set of an entrance conversion. It starts a
-// new processing chain, so txn is fresh, and its lifetime never outlives the
-// external token it was converted from.
-func (i *Issuer) entranceClaims(input EntranceInput, now time.Time) (internaljwt.Claims, error) {
-	if err := validateEntrance(input); err != nil {
+// externalTokenClaims derives the claim set of an external token conversion.
+// It starts a new processing chain, so txn is fresh, and its lifetime never
+// outlives the external token it was converted from.
+func (i *Issuer) externalTokenClaims(input ExternalTokenInput, now time.Time) (internaljwt.Claims, error) {
+	if err := validateExternalToken(input); err != nil {
 		return internaljwt.Claims{}, err
 	}
 
@@ -74,9 +74,9 @@ func (i *Issuer) entranceClaims(input EntranceInput, now time.Time) (internaljwt
 	}, nil
 }
 
-// validateEntrance checks the input of an entrance conversion against the
-// claims its token_use requires and forbids
-func validateEntrance(input EntranceInput) error {
+// validateExternalToken checks the input of an external token conversion
+// against the claims its token_use requires and forbids.
+func validateExternalToken(input ExternalTokenInput) error {
 	if input.Audience == "" {
 		return ErrMissingAudience
 	}
@@ -101,14 +101,14 @@ func validateEntrance(input EntranceInput) error {
 		return ErrMissingSourceExpiry
 	}
 
-	return validateEntranceBinding(input)
+	return validateExternalTokenBinding(input)
 }
 
-// validateEntranceBinding checks the tenant_id and event_id an entrance
-// conversion must and must not carry.
-func validateEntranceBinding(input EntranceInput) error {
+// validateExternalTokenBinding checks the tenant_id and event_id an external
+// token conversion must and must not carry.
+func validateExternalTokenBinding(input ExternalTokenInput) error {
 	if input.TokenUse == internaljwt.TokenUseService {
-		return ErrEntranceService
+		return ErrExternalService
 	}
 
 	return validateBinding(input.TokenUse, input.TenantPublicID, input.EventPublicID)

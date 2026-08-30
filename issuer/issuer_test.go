@@ -232,16 +232,16 @@ func assertUUIDv7(t *testing.T, value, name string) {
 	}
 }
 
-func TestIssueEntrance(t *testing.T) {
+func TestIssueFromExternal(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		input EntranceInput
+		input ExternalTokenInput
 		// absent lists the claims this token_use must not carry.
 		absent []string
 	}{
 		"tenant access": {
-			input: EntranceInput{
+			input: ExternalTokenInput{
 				Audience:        "tolo-tenant-management",
 				TokenUse:        internaljwt.TokenUseTenantAccess,
 				Subject:         "user-1",
@@ -255,7 +255,7 @@ func TestIssueEntrance(t *testing.T) {
 			absent: []string{"origin_sub", "event_id"},
 		},
 		"event access": {
-			input: EntranceInput{
+			input: ExternalTokenInput{
 				Audience:        "tolo-observation",
 				TokenUse:        internaljwt.TokenUseEventAccess,
 				Subject:         "user-2",
@@ -269,7 +269,7 @@ func TestIssueEntrance(t *testing.T) {
 			absent: []string{"origin_sub"},
 		},
 		"registration": {
-			input: EntranceInput{
+			input: ExternalTokenInput{
 				Audience:        "tolo-tenant-management",
 				TokenUse:        internaljwt.TokenUseRegistration,
 				Subject:         "user-3",
@@ -290,9 +290,9 @@ func TestIssueEntrance(t *testing.T) {
 
 			issuer := newTestIssuer(t)
 
-			issued, err := issuer.IssueEntrance(t.Context(), test.input)
+			issued, err := issuer.IssueFromExternal(t.Context(), test.input)
 			if err != nil {
-				t.Fatalf("IssueEntrance: %v", err)
+				t.Fatalf("IssueFromExternal: %v", err)
 			}
 
 			claims, raw := verify(t, issuer, test.input.Audience, issued.Token)
@@ -349,7 +349,7 @@ func TestIssueEntrance(t *testing.T) {
 	}
 }
 
-func TestIssueEntranceCapsExpiryAtTheSourceToken(t *testing.T) {
+func TestIssueFromExternalCapsExpiryAtTheSourceToken(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
@@ -376,12 +376,12 @@ func TestIssueEntranceCapsExpiryAtTheSourceToken(t *testing.T) {
 
 			issuer := newTestIssuer(t)
 
-			input := validEntranceInput()
+			input := validExternalTokenInput()
 			input.SourceExpiresAt = test.sourceExpiresAt
 
-			issued, err := issuer.IssueEntrance(t.Context(), input)
+			issued, err := issuer.IssueFromExternal(t.Context(), input)
 			if err != nil {
-				t.Fatalf("IssueEntrance: %v", err)
+				t.Fatalf("IssueFromExternal: %v", err)
 			}
 
 			claims, _ := verify(t, issuer, input.Audience, issued.Token)
@@ -392,8 +392,8 @@ func TestIssueEntranceCapsExpiryAtTheSourceToken(t *testing.T) {
 	}
 }
 
-func validEntranceInput() EntranceInput {
-	return EntranceInput{
+func validExternalTokenInput() ExternalTokenInput {
+	return ExternalTokenInput{
 		Audience:        "tolo-tenant-management",
 		TokenUse:        internaljwt.TokenUseTenantAccess,
 		Subject:         "user-1",
@@ -406,39 +406,39 @@ func validEntranceInput() EntranceInput {
 	}
 }
 
-func TestIssueEntranceRejects(t *testing.T) {
+func TestIssueFromExternalRejects(t *testing.T) {
 	t.Parallel()
 
-	tests := map[string]func(*EntranceInput){
-		"empty audience":               func(i *EntranceInput) { i.Audience = "" },
-		"empty subject":                func(i *EntranceInput) { i.Subject = "" },
-		"empty client ID":              func(i *EntranceInput) { i.ClientID = "" },
-		"empty scope":                  func(i *EntranceInput) { i.Scope = "" },
-		"empty source jti":             func(i *EntranceInput) { i.SourceJTI = "" },
-		"zero source expiry":           func(i *EntranceInput) { i.SourceExpiresAt = time.Time{} },
-		"source already expired":       func(i *EntranceInput) { i.SourceExpiresAt = fixedNow.Add(-time.Second) },
-		"source expiring now":          func(i *EntranceInput) { i.SourceExpiresAt = fixedNow },
-		"tenant_access without tenant": func(i *EntranceInput) { i.TenantPublicID = "" },
-		"tenant_access with event":     func(i *EntranceInput) { i.EventPublicID = "fedcba9876543210" },
-		"event_access without event": func(i *EntranceInput) {
+	tests := map[string]func(*ExternalTokenInput){
+		"empty audience":               func(i *ExternalTokenInput) { i.Audience = "" },
+		"empty subject":                func(i *ExternalTokenInput) { i.Subject = "" },
+		"empty client ID":              func(i *ExternalTokenInput) { i.ClientID = "" },
+		"empty scope":                  func(i *ExternalTokenInput) { i.Scope = "" },
+		"empty source jti":             func(i *ExternalTokenInput) { i.SourceJTI = "" },
+		"zero source expiry":           func(i *ExternalTokenInput) { i.SourceExpiresAt = time.Time{} },
+		"source already expired":       func(i *ExternalTokenInput) { i.SourceExpiresAt = fixedNow.Add(-time.Second) },
+		"source expiring now":          func(i *ExternalTokenInput) { i.SourceExpiresAt = fixedNow },
+		"tenant_access without tenant": func(i *ExternalTokenInput) { i.TenantPublicID = "" },
+		"tenant_access with event":     func(i *ExternalTokenInput) { i.EventPublicID = "fedcba9876543210" },
+		"event_access without event": func(i *ExternalTokenInput) {
 			i.TokenUse = internaljwt.TokenUseEventAccess
 			i.EventPublicID = ""
 		},
-		"event_access without tenant": func(i *EntranceInput) {
+		"event_access without tenant": func(i *ExternalTokenInput) {
 			i.TokenUse = internaljwt.TokenUseEventAccess
 			i.TenantPublicID = ""
 			i.EventPublicID = "fedcba9876543210"
 		},
-		"registration with tenant": func(i *EntranceInput) {
+		"registration with tenant": func(i *ExternalTokenInput) {
 			i.TokenUse = internaljwt.TokenUseRegistration
 		},
-		"service token use": func(i *EntranceInput) {
+		"service token use": func(i *ExternalTokenInput) {
 			i.TokenUse = internaljwt.TokenUseService
 		},
-		"unknown token use": func(i *EntranceInput) {
+		"unknown token use": func(i *ExternalTokenInput) {
 			i.TokenUse = "administrator"
 		},
-		"empty token use": func(i *EntranceInput) {
+		"empty token use": func(i *ExternalTokenInput) {
 			i.TokenUse = ""
 		},
 	}
@@ -449,11 +449,11 @@ func TestIssueEntranceRejects(t *testing.T) {
 
 			issuer := newTestIssuer(t)
 
-			input := validEntranceInput()
+			input := validExternalTokenInput()
 			mutate(&input)
 
-			if _, err := issuer.IssueEntrance(t.Context(), input); err == nil {
-				t.Fatal("IssueEntrance accepted an input it must reject")
+			if _, err := issuer.IssueFromExternal(t.Context(), input); err == nil {
+				t.Fatal("IssueFromExternal accepted an input it must reject")
 			}
 		})
 	}
@@ -469,7 +469,7 @@ func TestIssueUserOriginService(t *testing.T) {
 		wantEvent     string
 		absent        []string
 	}{
-		"first re-issue from an event_access entrance token": {
+		"first re-issue from an event_access external-token conversion": {
 			context: internaljwt.Claims{
 				RegisteredClaims: jwt.RegisteredClaims{
 					Issuer:    "service-gateway",
@@ -944,8 +944,8 @@ func TestIssueReportsKeyProviderFailure(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 
-	if _, err := issuer.IssueEntrance(t.Context(), validEntranceInput()); err == nil {
-		t.Error("IssueEntrance ignored a key provider failure")
+	if _, err := issuer.IssueFromExternal(t.Context(), validExternalTokenInput()); err == nil {
+		t.Error("IssueFromExternal ignored a key provider failure")
 	}
 
 	_, err = issuer.IssueUserOriginService(t.Context(), UserOriginServiceInput{
@@ -1064,7 +1064,7 @@ func TestJWKSRejectsDuplicateKeyIDs(t *testing.T) {
 }
 
 // TestIssueMintsFreshIdentifiers covers that nothing is reused between two
-// issues: every conversion and re-issue gets its own jti, and every entrance
+// issues: every conversion and re-issue gets its own jti, and every external token conversion
 // and new machine origin its own txn (service_gateway.md「TTL と再利用」).
 func TestIssueMintsFreshIdentifiers(t *testing.T) {
 	t.Parallel()
@@ -1077,9 +1077,9 @@ func TestIssueMintsFreshIdentifiers(t *testing.T) {
 	txns := make(map[string]struct{}, issues*2)
 
 	for range issues {
-		entrance, err := issuer.IssueEntrance(t.Context(), validEntranceInput())
+		external, err := issuer.IssueFromExternal(t.Context(), validExternalTokenInput())
 		if err != nil {
-			t.Fatalf("IssueEntrance: %v", err)
+			t.Fatalf("IssueFromExternal: %v", err)
 		}
 
 		machine, err := issuer.IssueMachineOriginService(t.Context(), MachineOriginServiceInput{
@@ -1100,7 +1100,7 @@ func TestIssueMintsFreshIdentifiers(t *testing.T) {
 			t.Fatalf("IssueUserOriginService: %v", err)
 		}
 
-		for _, issued := range []Issued{entrance, machine, user} {
+		for _, issued := range []Issued{external, machine, user} {
 			if _, seen := jtis[issued.Claims.ID]; seen {
 				t.Fatalf("jti %q was issued twice", issued.Claims.ID)
 			}
@@ -1108,7 +1108,7 @@ func TestIssueMintsFreshIdentifiers(t *testing.T) {
 			jtis[issued.Claims.ID] = struct{}{}
 		}
 
-		for _, issued := range []Issued{entrance, machine} {
+		for _, issued := range []Issued{external, machine} {
 			if _, seen := txns[issued.Claims.Txn]; seen {
 				t.Fatalf("txn %q was generated twice", issued.Claims.Txn)
 			}
@@ -1159,31 +1159,31 @@ func TestIssueErrorsMatchTheirSentinels(t *testing.T) {
 		issue func() error
 		want  error
 	}{
-		"entrance without audience": {
+		"external token conversion without audience": {
 			issue: func() error {
-				input := validEntranceInput()
+				input := validExternalTokenInput()
 				input.Audience = ""
-				_, err := issuer.IssueEntrance(t.Context(), input)
+				_, err := issuer.IssueFromExternal(t.Context(), input)
 
 				return err
 			},
 			want: ErrMissingAudience,
 		},
-		"entrance with an unknown token use": {
+		"external token conversion with an unknown token use": {
 			issue: func() error {
-				input := validEntranceInput()
+				input := validExternalTokenInput()
 				input.TokenUse = "unknown"
-				_, err := issuer.IssueEntrance(t.Context(), input)
+				_, err := issuer.IssueFromExternal(t.Context(), input)
 
 				return err
 			},
 			want: ErrUnsupportedTokenUse,
 		},
-		"entrance with an expired source token": {
+		"external token conversion with an expired source token": {
 			issue: func() error {
-				input := validEntranceInput()
+				input := validExternalTokenInput()
 				input.SourceExpiresAt = fixedNow.Add(-time.Second)
-				_, err := issuer.IssueEntrance(t.Context(), input)
+				_, err := issuer.IssueFromExternal(t.Context(), input)
 
 				return err
 			},
@@ -1249,7 +1249,7 @@ func TestKeyProviderFailureIsWrapped(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 
-	_, err = issuer.IssueEntrance(t.Context(), validEntranceInput())
+	_, err = issuer.IssueFromExternal(t.Context(), validExternalTokenInput())
 	if !errors.Is(err, ErrKeyProvider) {
 		t.Fatalf("got %v, want %v", err, ErrKeyProvider)
 	}

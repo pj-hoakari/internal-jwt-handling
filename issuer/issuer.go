@@ -22,8 +22,8 @@ var (
 // ErrMissingAudience reports an issue input that names no destination.
 var ErrMissingAudience = errors.New("audience is required")
 
-// Issuer issues internal JWTs: it converts verified external tokens at an
-// entrance and re-issues service tokens hop by hop. The claim derivation of
+// Issuer issues internal JWTs: it converts verified external tokens into
+// internal ones and re-issues service tokens hop by hop. The claim derivation of
 // each origin lives beside its input type; the signing is the signer's.
 type Issuer struct {
 	signer *signer
@@ -86,9 +86,9 @@ type Issued struct {
 	Claims internaljwt.Claims
 }
 
-// IssueEntrance converts a verified external token into an internal JWT.
-func (i *Issuer) IssueEntrance(ctx context.Context, input EntranceInput) (Issued, error) {
-	claims, err := i.entranceClaims(input, i.now())
+// IssueFromExternal converts a verified external token into an internal JWT.
+func (i *Issuer) IssueFromExternal(ctx context.Context, input ExternalTokenInput) (Issued, error) {
+	claims, err := i.externalTokenClaims(input, i.now())
 	if err != nil {
 		return Issued{}, err
 	}
