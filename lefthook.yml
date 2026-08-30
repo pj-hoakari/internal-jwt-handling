@@ -10,3 +10,8 @@ pre-commit:
             - ".golangci.yml"
           run: mise exec -- golangci-lint run --config .golangci.yml --fix
           stage_fixed: true
+
+        - name: Test with go test
+          glob:
+            - "*.go"
+          run: mise exec -- go test -v ./...
