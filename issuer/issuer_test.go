@@ -124,7 +124,7 @@ func verify(t *testing.T, issuer *Issuer, audience, token string) (internaljwt.C
 	raw := payload(t, token)
 
 	// One token names one audience, and aud is written as that plain string
-	// rather than as a one-element array (internal_jwt.md「共通必須クレーム」).
+	// rather than as a one-element array.
 	got, ok := raw["aud"].(string)
 	if !ok {
 		t.Fatalf("aud = %#v, want the single string %q", raw["aud"], audience)
@@ -1065,7 +1065,7 @@ func TestJWKSRejectsDuplicateKeyIDs(t *testing.T) {
 
 // TestIssueMintsFreshIdentifiers covers that nothing is reused between two
 // issues: every conversion and re-issue gets its own jti, and every external token conversion
-// and new machine origin its own txn (service_gateway.md「TTL と再利用」).
+// and new machine origin its own txn.
 func TestIssueMintsFreshIdentifiers(t *testing.T) {
 	t.Parallel()
 
