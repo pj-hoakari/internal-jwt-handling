@@ -5,6 +5,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"testing"
 )
 
@@ -85,6 +86,72 @@ func TestNewJWKRejectsInvalidKeys(t *testing.T) {
 
 			if _, err := NewJWK(test.keyID, test.key); err == nil {
 				t.Fatal("NewJWK accepted a key it must reject")
+			}
+		})
+	}
+}
+
+func TestPublicKeyRoundTripsNewJWK(t *testing.T) {
+	t.Parallel()
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+
+	jwk, err := NewJWK("signing-2026-08", &key.PublicKey)
+	if err != nil {
+		t.Fatalf("NewJWK: %v", err)
+	}
+
+	decoded, err := PublicKey(jwk)
+	if err != nil {
+		t.Fatalf("PublicKey: %v", err)
+	}
+
+	if !decoded.Equal(&key.PublicKey) {
+		t.Fatal("PublicKey did not return the key NewJWK described")
+	}
+}
+
+func TestPublicKeyRejectsInvalidJWKs(t *testing.T) {
+	t.Parallel()
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+
+	valid, err := NewJWK("signing-2026-08", &key.PublicKey)
+	if err != nil {
+		t.Fatalf("NewJWK: %v", err)
+	}
+
+	tests := map[string]struct {
+		mutate func(*JWK)
+		want   error
+	}{
+		"empty key ID":        {mutate: func(j *JWK) { j.KeyID = "" }, want: ErrMissingKeyID},
+		"key type RSA":        {mutate: func(j *JWK) { j.KeyType = "RSA" }, want: ErrUnsupportedKeyType},
+		"curve P-384":         {mutate: func(j *JWK) { j.Curve = "P-384" }, want: ErrUnsupportedCurve},
+		"algorithm ES384":     {mutate: func(j *JWK) { j.Algorithm = "ES384" }, want: ErrUnsupportedAlgorithm},
+		"key use enc":         {mutate: func(j *JWK) { j.Use = "enc" }, want: ErrUnsupportedKeyUse},
+		"undecodable x":       {mutate: func(j *JWK) { j.X = "!!!" }, want: ErrDecodeCoordinate},
+		"undecodable y":       {mutate: func(j *JWK) { j.Y = "!!!" }, want: ErrDecodeCoordinate},
+		"short x":             {mutate: func(j *JWK) { j.X = base64.RawURLEncoding.EncodeToString([]byte{1, 2, 3}) }, want: ErrUnexpectedKeyLength},
+		"short y":             {mutate: func(j *JWK) { j.Y = base64.RawURLEncoding.EncodeToString([]byte{1, 2, 3}) }, want: ErrUnexpectedKeyLength},
+		"point off the curve": {mutate: func(j *JWK) { j.Y = base64.RawURLEncoding.EncodeToString(make([]byte, 32)) }, want: ErrInvalidPublicKey},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			jwk := valid
+			test.mutate(&jwk)
+
+			if _, err := PublicKey(jwk); !errors.Is(err, test.want) {
+				t.Fatalf("PublicKey error = %v, want %v", err, test.want)
 			}
 		})
 	}
