@@ -125,7 +125,7 @@ func TestVerifyRejectsAnInvalidOriginClaim(t *testing.T) {
 		want   error
 		detail string
 	}{
-		"an entrance conversion without scope": {
+		"an external token conversion without scope": {
 			claims: func() internaljwt.Claims {
 				claims := validClaims()
 				claims.Scope = ""
@@ -134,7 +134,7 @@ func TestVerifyRejectsAnInvalidOriginClaim(t *testing.T) {
 			},
 			want: ErrMissingClaim, detail: "scope",
 		},
-		"an entrance conversion without src_jti": {
+		"an external token conversion without src_jti": {
 			claims: func() internaljwt.Claims {
 				claims := validClaims()
 				claims.SourceJTI = ""
@@ -143,7 +143,7 @@ func TestVerifyRejectsAnInvalidOriginClaim(t *testing.T) {
 			},
 			want: ErrMissingClaim, detail: "src_jti",
 		},
-		"an entrance conversion carrying origin_sub": {
+		"an external token conversion carrying origin_sub": {
 			claims: func() internaljwt.Claims {
 				claims := validClaims()
 				claims.OriginSub = "user-1"
