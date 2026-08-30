@@ -111,5 +111,5 @@ func validateExternalTokenBinding(input ExternalTokenInput) error {
 		return ErrExternalService
 	}
 
-	return validateBinding(input.TokenUse, input.TenantPublicID, input.EventPublicID)
+	return internaljwt.ValidateBinding(input.TokenUse, input.TenantPublicID, input.EventPublicID)
 }

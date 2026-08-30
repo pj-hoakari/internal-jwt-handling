@@ -291,7 +291,7 @@ func TestGenerateRejects(t *testing.T) {
 		},
 		"tenant_access without tenant": {
 			config: Config{Issuer: "gw", Audience: "a", TokenUse: internaljwt.TokenUseTenantAccess, Scope: "s"},
-			want:   issuer.ErrMissingTenantPublicID,
+			want:   internaljwt.ErrMissingTenantPublicID,
 		},
 		"tenant_access without scope": {
 			config: Config{Issuer: "gw", Audience: "a", TokenUse: internaljwt.TokenUseTenantAccess, TenantPublicID: "0123456789abcdef"},
@@ -303,7 +303,7 @@ func TestGenerateRejects(t *testing.T) {
 		},
 		"unknown token use": {
 			config: Config{Issuer: "gw", Audience: "a", TokenUse: "other", Scope: "s"},
-			want:   issuer.ErrUnsupportedTokenUse,
+			want:   internaljwt.ErrUnsupportedTokenUse,
 		},
 		"empty issuer": {
 			config: Config{Issuer: "", Audience: "a", TokenUse: internaljwt.TokenUseService},

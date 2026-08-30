@@ -11,19 +11,12 @@ import (
 	internaljwt "github.com/pj-hoakari/internal-jwt-handling"
 )
 
-// Claim set errors: the wire form, the binding claims a token_use requires
-// and forbids, and the checks every context token passes. A binding check
-// that ran on the context token rather than on the input's own fields is
-// wrapped as "context token: ...".
+// Claim set errors: the wire form and the checks every context token passes.
+// The binding claims a token_use requires and forbids are checked by
+// internaljwt.ValidateBinding. A binding check that ran on the context token
+// rather than on the input's own fields is wrapped as "context token: ...".
 var (
 	ErrAudienceCount = errors.New("an internal JWT names exactly one audience")
-
-	ErrUnsupportedTokenUse       = errors.New("unsupported token use")
-	ErrMissingTenantPublicID     = errors.New("tenant public ID is required")
-	ErrMissingEventPublicID      = errors.New("event public ID is required")
-	ErrForbiddenEventPublicID    = errors.New("must not carry an event public ID")
-	ErrRegistrationBinding       = errors.New("registration must not carry a tenant or event public ID")
-	ErrServiceEventWithoutTenant = errors.New("a service token carrying an event public ID must carry a tenant public ID")
 
 	ErrContextMissingExpiry    = errors.New("context token exp is required")
 	ErrContextExpired          = errors.New("context token has expired")
@@ -81,40 +74,6 @@ func newSignedClaims(claims internaljwt.Claims) (signedClaims, error) {
 		TenantPublicID: claims.TenantPublicID,
 		EventPublicID:  claims.EventPublicID,
 	}, nil
-}
-
-// validateBinding checks the binding claims a token_use requires and forbids.
-func validateBinding(tokenUse, tenantPublicID, eventPublicID string) error {
-	switch tokenUse {
-	case internaljwt.TokenUseTenantAccess:
-		if tenantPublicID == "" {
-			return fmt.Errorf("%w for %s", ErrMissingTenantPublicID, tokenUse)
-		}
-
-		if eventPublicID != "" {
-			return fmt.Errorf("%s %w", tokenUse, ErrForbiddenEventPublicID)
-		}
-	case internaljwt.TokenUseEventAccess:
-		if tenantPublicID == "" {
-			return fmt.Errorf("%w for %s", ErrMissingTenantPublicID, tokenUse)
-		}
-
-		if eventPublicID == "" {
-			return fmt.Errorf("%w for %s", ErrMissingEventPublicID, tokenUse)
-		}
-	case internaljwt.TokenUseRegistration:
-		if tenantPublicID != "" || eventPublicID != "" {
-			return ErrRegistrationBinding
-		}
-	case internaljwt.TokenUseService:
-		if eventPublicID != "" && tenantPublicID == "" {
-			return ErrServiceEventWithoutTenant
-		}
-	default:
-		return fmt.Errorf("%w %q", ErrUnsupportedTokenUse, tokenUse)
-	}
-
-	return nil
 }
 
 // validateContextToken checks what every context token must satisfy before

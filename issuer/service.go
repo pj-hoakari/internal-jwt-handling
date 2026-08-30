@@ -165,10 +165,10 @@ func validateUserOriginContextUse(context internaljwt.Claims) error {
 			return ErrContextNotUserOrigin
 		}
 	default:
-		return fmt.Errorf("context token: %w %q", ErrUnsupportedTokenUse, context.TokenUse)
+		return fmt.Errorf("context token: %w %q", internaljwt.ErrUnsupportedTokenUse, context.TokenUse)
 	}
 
-	if err := validateBinding(context.TokenUse, context.TenantPublicID, context.EventPublicID); err != nil {
+	if err := internaljwt.ValidateBinding(context.TokenUse, context.TenantPublicID, context.EventPublicID); err != nil {
 		return fmt.Errorf("context token: %w", err)
 	}
 

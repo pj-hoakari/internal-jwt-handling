@@ -1177,7 +1177,7 @@ func TestIssueErrorsMatchTheirSentinels(t *testing.T) {
 
 				return err
 			},
-			want: ErrUnsupportedTokenUse,
+			want: internaljwt.ErrUnsupportedTokenUse,
 		},
 		"external token conversion with an expired source token": {
 			issue: func() error {
@@ -1212,7 +1212,7 @@ func TestIssueErrorsMatchTheirSentinels(t *testing.T) {
 
 				return err
 			},
-			want: ErrMissingTenantPublicID,
+			want: internaljwt.ErrMissingTenantPublicID,
 		},
 		"machine-origin re-issue from a user context": {
 			issue: func() error {
