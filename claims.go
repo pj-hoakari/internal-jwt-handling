@@ -3,7 +3,41 @@ package internaljwt
 import (
 	"errors"
 	"fmt"
+
+	"github.com/golang-jwt/jwt/v5"
 )
+
+// Token uses an internal JWT carries in its token_use claim.
+const (
+	TokenUseTenantAccess = "tenant_access"
+	TokenUseEventAccess  = "event_access"
+	TokenUseService      = "service"
+	TokenUseRegistration = "registration"
+)
+
+// Claims is the claim set of an internal JWT.
+type Claims struct {
+	jwt.RegisteredClaims
+	TokenUse string `json:"token_use"`
+	ClientID string `json:"client_id"`
+	// Txn correlates every hop of one processing chain.
+	Txn string `json:"txn"`
+	// Scope is the scope of the external token, copied over unchanged.
+	Scope string `json:"scope,omitempty"`
+	// SourceJTI is carried in the src_jti claim and is the jti of the token
+	// this one was converted from: the external token at an external token
+	// conversion, the context token at a service re-issue.
+	SourceJTI string `json:"src_jti,omitempty"`
+	// OriginSub is the user a user-origin service token was re-issued for. It
+	// is for audit only and must not feed authorization decisions.
+	OriginSub string `json:"origin_sub,omitempty"`
+	// TenantPublicID is carried in the tenant_id JWT claim. Its value is the
+	// tenant's 16-character hexadecimal public ID.
+	TenantPublicID string `json:"tenant_id,omitempty"`
+	// EventPublicID is carried in the event_id JWT claim and is the event's
+	// 16-character hexadecimal public ID.
+	EventPublicID string `json:"event_id,omitempty"`
+}
 
 // Binding errors ValidateBinding returns.
 var (

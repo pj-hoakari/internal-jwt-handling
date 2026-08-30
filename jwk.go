@@ -6,17 +6,9 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-
-	"github.com/golang-jwt/jwt/v5"
 )
 
-const (
-	TokenUseTenantAccess = "tenant_access"
-	TokenUseEventAccess  = "event_access"
-	TokenUseService      = "service"
-	TokenUseRegistration = "registration"
-)
-
+// The JOSE parameters every internal JWT signing key uses.
 const (
 	Algorithm = "ES256"
 	KeyType   = "EC"
@@ -24,29 +16,7 @@ const (
 	KeyUse    = "sig"
 )
 
-type Claims struct {
-	jwt.RegisteredClaims
-	TokenUse string `json:"token_use"`
-	ClientID string `json:"client_id"`
-	// Txn correlates every hop of one processing chain.
-	Txn string `json:"txn"`
-	// Scope is the scope of the external token, copied over unchanged.
-	Scope string `json:"scope,omitempty"`
-	// SourceJTI is carried in the src_jti claim and is the jti of the token
-	// this one was converted from: the external token at an entrance
-	// conversion, the context token at a service re-issue.
-	SourceJTI string `json:"src_jti,omitempty"`
-	// OriginSub is the user a user-origin service token was re-issued for. It
-	// is for audit only and must not feed authorization decisions.
-	OriginSub string `json:"origin_sub,omitempty"`
-	// TenantPublicID is carried in the tenant_id JWT claim. Its value is the
-	// tenant's 16-character hexadecimal public ID,
-	TenantPublicID string `json:"tenant_id,omitempty"`
-	// EventPublicID is carried in the event_id JWT claim and is the event's
-	// 16-character hexadecimal public ID.
-	EventPublicID string `json:"event_id,omitempty"`
-}
-
+// JWKS is the key set the verifying side fetches.
 type JWKS struct {
 	Keys []JWK `json:"keys"`
 }
