@@ -16,8 +16,7 @@ var (
 )
 
 // BearerToken extracts the token of an Authorization header value.
-// The scheme
-// is matched case-insensitively and is followed by one space and the token.
+// The scheme is matched case-insensitively and is followed by one space and the token.
 func BearerToken(authorization string) (string, error) {
 	if authorization == "" {
 		return "", ErrMissingAuthorization
