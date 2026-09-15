@@ -3,7 +3,7 @@ module github.com/pj-hoakari/internal-jwt-handling
 go 1.27.0
 
 require (
-	connectrpc.com/connect v1.20.0
+	connectrpc.com/connect v1.21.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/pj-hoakari/protoc-gen-authz-go v0.3.0
