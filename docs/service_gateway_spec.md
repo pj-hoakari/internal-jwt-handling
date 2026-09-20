@@ -13,8 +13,8 @@
 - ストリーミング RPC はストリーム開始時に検証する
 - PubSub の publish／購読と Firestore 変更通知は経由しない（ブローカー仲介）
 - マイクロサービスへ Service Gateway を迂回して到達できないことをインフラ層（ネットワーク構成）で保証する
-  例外は2つある。Edge Bridge Service は完全に独立した位置に置き、本 Gateway の後ろに配置しない（Edge Bridge Service。認証・認可は Firestore のアクセス制御による）。Flow Control と Line Control は Observation からの直接呼び出しのみを受け、本 Gateway を経由しない（Flow Control、Line Control。到達制御はインフラ層とワークロード資格情報の直接検証で保証する）
-  例外を認める基準は「Service Gateway がペイロードに関与せず、呼び出し元が単一のサービス間経路」に限る
+  例外は2つある。Edge Bridge Service は完全に独立した位置に置き、本 Gateway の後ろに配置しない（Edge Bridge Service。認証・認可は `event_access` の直接検証と受理 client の限定、および Firestore のアクセス制御による）。Flow Control と Line Control は Observation からの直接呼び出しのみを受け、本 Gateway を経由しない（Flow Control、Line Control。到達制御はインフラ層とワークロード資格情報の直接検証で保証する）
+  例外を認める基準は「Service Gateway が認証・認可以外の処理をペイロードに加えず、呼び出し元が単一のサービス間経路」に限る
 
 ## アプリ内実装と入口の配備
 
@@ -47,7 +47,7 @@ Cloud Run本番は外部Application Load BalancerとCloud Armorを入口とし�
 | 入力 | 処理 |
 |---|---|
 | workload-authorizationあり | 完全なGoogle tokenを検証し、許可SAから論理サービスAを得る。その後にA宛の文脈内部JWTと許可辺を確認する |
-| workload資格情報なし、外部資格情報あり | IdP token・必要なDPoPを検証し、client・scope・RPC公開区分を確認する。内部JWTやGoogle tokenをIdP tokenとして代用しない |
+| workload資格情報なし、外部資格情報あり | IdP token・必要なDPoPを検証し、client・scope・RPC公開区分を確認する（client 識別による公開区分の強制は未確定事項）。内部JWTやGoogle tokenをIdP tokenとして代用しない |
 | 資格情報なし | 明示匿名RPCのみを受理する。サービス専用RPC・認証必須RPCを実行しない |
 
 空・不正・重複・混在した認証情報は拒否し、失敗した方式から外部認証や匿名へフォールバックしない。
@@ -83,10 +83,10 @@ protoの採用版を固定し、更新時は機械的な互換性と、追加フ
 | 〃 | 〃 | GetObservationSettings | 内部オンリー（Observation の設定値取得） |
 | 〃 | 〃 | UpdateObservationSettings | 公開（管理 UI） |
 | 〃 | `tolo.relation.v1.RelationAdminService` | AddTenantMember、ChangeTenantRole、GrantEventRole、RevokeRole、ListMemberships | 公開（管理 UI。関係参照は Tenant Management が実装） |
-| Graph Authoring | `tolo.graph.v1.GraphAuthoringService` | SaveGraph、MapObservationPoint、AddQrLocation、UpdateQrLocation、RemoveQrLocation、GetGraph、PublishRevision | 公開（管理・設計 UI） |
+| Graph Authoring | `tolo.graph.v1.GraphAuthoringService` | SaveGraph、MapObservationPoint、AddQrLocation、UpdateQrLocation、RemoveQrLocation、GetGraph、PublishRevision | 公開（管理 UI） |
 | 〃 | `tolo.graph.v1.GraphSupplyService` | 全 RPC（GetCurrentRevision、GetObservationPointMappings、GetDisplayNames、GetGatePoints、GetQrLocations） | 内部オンリー（Observation・Guest Service） |
 | Observation | `tolo.observation.v1.MeasurementIngestService` | ReportMeasurements | 公開（エッジ端末）＋内部（Guest Service の QR 計上由来） |
-| 〃 | `tolo.observation.v1.EdgeDeviceService` | RegisterEdgeDevice、UnregisterEdgeDevice、ListEdgeDevices | 公開（管理・設計 UI） |
+| 〃 | `tolo.observation.v1.EdgeDeviceService` | RegisterEdgeDevice、UnregisterEdgeDevice、ListEdgeDevices | 公開（管理 UI） |
 | 〃 | 〃 | Heartbeat | 公開（エッジ端末） |
 | 〃 | 〃 | UpdateObservationPointConfig | 公開（スタッフアプリ） |
 | 〃 | `tolo.observation.v1.ManualInterventionService` | 全 RPC（OperateGate、ToggleDangerFlag、RegisterScheduleEvent、ReportCongestion、CorrectQueue） | 公開（スタッフアプリ） |
@@ -94,7 +94,7 @@ protoの採用版を固定し、更新時は機械的な互換性と、追加フ
 | 〃 | 〃 | GetGuestSnapshot | 内部オンリー（Guest Service の復旧 pull） |
 | Operation | `tolo.operation.v1.StaffCommunicationService` | SendStaffMessage、RevokeStaffMessage、ShareGuidanceInfo | 公開（スタッフアプリ） |
 | 〃 | 〃 | ListStaffMessages | 公開（スタッフアプリ）＋内部（Guest Service の復旧 pull） |
-| 〃 | `tolo.operation.v1.OperationControlService` | 全 RPC（DirectReassignment、ApplyReassignment、ListReassignments） | 公開（スタッフアプリ、ListReassignments は管理・設計 UI も） |
+| 〃 | `tolo.operation.v1.OperationControlService` | 全 RPC（DirectReassignment、ApplyReassignment、ListReassignments） | 公開（スタッフアプリ、ListReassignments は管理 UI も） |
 | 〃 | `tolo.operation.v1.DeliveryCoordinationService` | UpdateConnectionState | 公開（スタッフアプリ） |
 | 〃 | 〃 | RequestProposalDelivery、RecordFeedbackValues | 内部オンリー（Observation） |
 | 〃 | `tolo.operation.v1.DigestService` | GetHistoryDigest | 公開（スタッフアプリ） |
@@ -132,7 +132,8 @@ protoの採用版を固定し、更新時は機械的な互換性と、追加フ
 - 束縛を要求するのは public client（スタッフアプリ、エッジ端末の観測ページ）へ発行されたトークンに限る。移行中は `cnf` を持たないトークンを従来どおり扱い、public client の対応完了後に、public client へ発行された束縛のないトークンを拒否へ切り替える（発行先は `client_id` claim で判定する）。BFF（confidential client）へ発行されたトークンには束縛を要求しない
 - proof 識別子の再生防止は短命の保持を要する。JWT 発行処理をステートレスに保つ方針の明示的な例外とする
 - 送信者拘束は外部トークンの層で完結させ、内部 JWT へ `cnf` 等の束縛クレームを持ち込まない
-- メソッド単位の要求 token_use を認可表（後述）で強制する。scope は発行時点の権限スナップショットであり、各サービスが主判定に用いる。Service Gateway は値を変更せず内部 JWT へ転記する
+- メソッド単位の要求 token_use と scope を認可表（後述）で強制し、満たさない要求は宛先サービスへ転送しない。scope は発行時点の権限スナップショットであり、各サービスも内部 JWT の scope を主判定に用いる（入口と宛先の二重確認）。Service Gateway は値を変更せず内部 JWT へ転記する
+  認可表の「公開」区分（どの client 向けの RPC か）を外部トークンの `client_id` で強制するかは未確定とする。現時点で `client_id` は発行先 client の確認と DPoP の要否の判定に用いる
 - 失効照会（introspection。RFC 7662）は metadata の `introspection_endpoint` を使用し、管理系の書き込み 6 RPC（ArchiveTenant、ChangeTenantContract、AddTenantMember、ChangeTenantRole、GrantEventRole、RevokeRole）に限って行う。結果は jti 単位で60秒キャッシュし、将来の追加はこの一覧への追記で行う
 - introspection が確認するのはトークンの active／revoked であり、現在の membership／permission ではない。6 RPC の現在権限は Tenant Management が同一 DB で別に確認する
 - その他の RPC は失効照会を行わず、TTL による自然失効に委ねる（外部トークンは自身の exp。既定は `tenant_access` 15 分・`event_access` 10 分（Auth（IdP））、内部 JWT 120 秒）。IdP の可用性が全 API の可用性を規定しないようにするためである
@@ -309,6 +310,8 @@ StartTenantRegistrationには、送信元単位のレート制限、ボット対
 
 - workload_auth.md に従い、transportの呼び出し元が許可されたGatewayであることを確認する。匿名の外部要求でもこの確認は省略しない。Flow／Lineは同仕様に定めるObservationの直接認証を行う
 - 内部JWTが必須の経路ではService GatewayのJWKSで署名を検証し、iss・aud・exp・nbfを確認する（clock skew 許容 ±30 秒）
+  検証に失敗した内部JWT（JWKSを再取得しても見つからない未知kidを含む）は unauthenticated で拒否する
+  検証鍵を解決できない場合（JWKSの取得失敗、その再試行を控えている間）は、内部JWTの正否を判定できないため unavailable を返し、unauthenticated と区別する
 - tenant_id／event_id claim とリクエスト対象の一致を確認する（保護境界の強制）
   claim もリクエストの識別子も公開 ID のため、値をそのまま突合する（internal_jwt.md）
   token_use=service で claim を持たない場合（マシン起点）は突合できない。この場合に処理を続けてよいのは、境界の強制を要さないと各仕様が明示したメソッドに限る
@@ -329,6 +332,7 @@ StartTenantRegistrationには、送信元単位のレート制限、ボット対
 | token_use は満たすが認可表で当該メソッドに許可されない | permission_denied |
 | introspection 不達（対象 6 RPC のみ fail closed） | unauthenticated |
 | 宛先サービス不達 | unavailable（透過） |
+| 宛先サービスが内部 JWT の検証鍵を解決できない（JWKS の取得失敗、その再試行を控えている間） | unavailable（透過） |
 
 ## 監査ログ
 
@@ -344,3 +348,4 @@ StartTenantRegistrationには、送信元単位のレート制限、ボット対
 - introspection キャッシュ TTL（60 秒）と失効反映遅れの許容値の最終確認
 - DPoP の nonce の要否、proof 識別子の保持方式と再生防止の窓、プロキシ配下での対象 URI の正規化規則、bearer 併存の打ち切り時期
 - DPoP が HTTP 層で用いるエラー表現と Connect エラーコードの対応づけの詳細
+- 認可表の公開区分を外部トークンの `client_id` で強制するか。Edge Bridge Service の入口は受理する client を `client_id` で限定済みであり（Edge Bridge Service）、本 Gateway の認可表へ同じ強制を及ぼすかは実装フェーズで確定する

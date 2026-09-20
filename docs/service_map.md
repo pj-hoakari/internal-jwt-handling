@@ -15,7 +15,7 @@ Cloud RunのGatewayはInvoker IAMを無効化してRPCごとにアプリ認証�
 - Edge Bridge Service は WebRTC のシグナリングのみを担い、Service Gateway の後ろに置かない。映像はページ間で直接やりとりする
 - PubSub は情報更新 push の3トピックのみ。at-least-once・イベント単位の順序キー・受信側冪等
 - 実線＝同期RPC（Connect。直接例外のプロトコルは各仕様に従う）または限定HTTP例外、太線（==>）＝PubSub、点線＝リスナー・参照系・外部プッシュ
-- BFF は図では省略（管理・設計 UI の Auth・GW への接続は BFF 経由。外部トークンは BFF のサーバ側に保持し、ブラウザへ渡さない）
+- BFF は図では省略（管理 UI の Auth・GW への接続は BFF 経由。外部トークンは BFF のサーバ側に保持し、ブラウザへ渡さない）
   スタッフアプリはログインも Token Exchange も直接 Auth と行う（public client の直接交換。トークンは DPoP で鍵束縛）。API 呼び出しはアプリ→GW のまま。BFF は現場運用の認証経路上にない
 
 ## 1. サービス間の関係全体図
@@ -24,7 +24,7 @@ Cloud RunのGatewayはInvoker IAMを無効化してRPCごとにアプリ認証�
 flowchart LR
   subgraph CL["クライアント"]
     StaffApp["スタッフアプリ"]
-    AdminUI["管理・設計 UI（オーナー／スタッフ）"]
+    AdminUI["管理 UI（オーナー／スタッフ）"]
     EdgeDev["エッジ端末（ブラウザ）"]
     GuestBr["ゲスト（ブラウザ／サイネージ）"]
   end
@@ -60,6 +60,7 @@ flowchart LR
   %% 認証（OIDC。GW を経由しない唯一の HTTP）
   StaffApp -. "ログイン・Token Exchange（認可コード＋PKCE、DPoP）" .-> Auth
   AdminUI -. "アカウント登録／ログイン／所有権取得専用トークン" .-> Auth
+  EdgeDev -. "ログイン・Token Exchange・自動更新（認可コード＋PKCE、DPoP）" .-> Auth
 
   %% クライアント → GW → 各サービス
   StaffApp -- "全 RPC（Operation・Observation・Realtime.Fetch・Notification.トークン管理 等）" --> GW
@@ -72,7 +73,7 @@ flowchart LR
   GW --> SV
 
   %% サービス間（同期 RPC。GW は省略表記）
-  OBS -- "グラフ版・紐づけ・ゲート指定" --> GA
+  OBS -- "グラフ版・紐づけ・ゲート指定・QR 設置箇所" --> GA
   OBS -- "Optimize（GW 非経由の直接呼び出し）" --> FLOW
   OBS -- "GuideQueues（GW 非経由の直接呼び出し）" --> LINE
   OBS -- "配信依頼・フィードバック引き渡し" --> OP
@@ -106,7 +107,7 @@ flowchart LR
   各サービスは Service Gateway の JWKS で内部 JWT をローカル検証する（図では省略）
 - introspection は管理系書き込み6 RPCの active／revoked 確認に限定し、同じ6 RPCの現在権限は Tenant Management が同一 DB で確認する
 - Flow／Line の呼び出し元は観測のみで、この呼び出しは Service Gateway を経由しない（各仕様参照）。Realtime・Notification は Operation の支援機構（独立コンテキストではない）
-- Firestore の読み取り（Realtime の変更検知、WebRTC シグナリング）は Firebase Auth カスタムトークンによるアクセス制御を伴う（realtime.md、edge_bridge.md）
+- Firestore の読み取り（Realtime の変更検知、WebRTC シグナリング）は Firebase Auth カスタムトークンによるアクセス制御を伴う（Realtime、Edge Bridge Service）
 - 関係参照（RelationAdminService）はTenant Managementが実装する。ClaimTenantOwnershipのオーナー所属作成はサービス内部で完結し、サービス間RPCを経ない
 - ゲート開閉（OperateGate）・観測点設定変更（UpdateObservationPointConfig）はスタッフアプリ→Observation の直接呼び出し。Operation→Observation の同期 RPC はない
 - Reference Aggregation はどのテナント保護境界にも属さず、入出力に テナント識別子を持たない
@@ -136,12 +137,12 @@ sequenceDiagram
 
   Edge->>Obs: 計測値送信（event_access）
   Obs->>Obs: 正規化（人/分）・観測スナップショット確定
-  Obs->>GA: 現在のグラフ版・紐づけ・ゲート指定を取得
+  Obs->>GA: 現在のグラフ版・紐づけ・ゲート指定・QR 設置箇所を取得
   Obs->>Flow: Optimize（グラフ＋スコア＋履歴＋検知状態＋手動介入＋参照値）
   Flow-->>Obs: 提案＋更新後の検知状態（観測が解釈せず永続化）
   Obs->>Line: GuideQueues（グラフ＋局所スコア＋ゲート状態＋前回行列状態＋履歴）
   Line-->>Obs: 更新後行列状態＋検知＋案内＋guest_digest＋形状提案
-  Obs->>Obs: 結果を DWH へ永続化
+  Obs->>Obs: 結果を永続化（PostgreSQL の時系列テーブル）
   Obs->>Op: RequestProposalDelivery（提案・案内。宛先はスタッフのみ）
   Op->>Op: 接続状態で配送を振り分け（DeliveryRouted）
   Op->>PS: realtime-delivery へ publish（DeliveryOrder。delivery_id 採番）
