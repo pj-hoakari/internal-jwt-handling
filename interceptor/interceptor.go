@@ -51,6 +51,7 @@ var (
 	ErrMissingVerifier = errors.New("token verifier is required")
 	ErrMissingPolicies = errors.New("policy table is required")
 	ErrUnauthenticated = errors.New("unauthenticated")
+	ErrUnavailable     = errors.New("internal JWT verification is unavailable")
 	ErrTokenUse        = errors.New("token use is not accepted by the procedure")
 	ErrMissingScope    = errors.New("required scope is missing")
 	ErrUnknownLevel    = errors.New("unknown access level")
@@ -221,6 +222,10 @@ func (i *interceptor) check(
 
 	claims, err := i.verify(ctx, header)
 	if err != nil {
+		if errors.Is(err, verifier.ErrKeyResolution) {
+			return internaljwt.Claims{}, connect.CodeUnavailable, fmt.Errorf("%w: %w", ErrUnavailable, err)
+		}
+
 		return internaljwt.Claims{}, connect.CodeUnauthenticated, fmt.Errorf("%w: %w", ErrUnauthenticated, err)
 	}
 
