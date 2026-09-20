@@ -8,20 +8,30 @@
 
 | 軸 | 役割 | 表現 | 値の例 |
 |---|---|---|---|
-| 公開面 | 外部公開の可否（サービス間専用か） | `level`（メソッド宣言） | public / authenticated / internal |
+| 公開面 | 実行を許す主体の区分（サービス間専用か。入口の到達性とは別） | `level`（メソッド宣言） | public / authenticated / internal |
 | 資格情報の種別 | 出自（grant type）と付随する束縛クレーム | `token_use`（クレーム） | tenant_access / event_access / service / registration |
-| 権限 | ユーザー起点の外部公開操作で実行できる操作の粒度 | `scope`（クレーム） | tenant.write / events.write / events.read |
+| 権限 | ユーザー起点の外部公開操作で実行できる操作の粒度 | `scope`（クレーム） | tenant.write / events.manage / events.operate / events.report / events.read |
 
 - `token_use` は資格情報が「どう発行されたか（出自）」と、どの束縛クレーム（`tenant_id` 等）を伴うかを表す。
 - `scope` は `tenant_access`、`event_access`、`registration` で「何ができるか」を表す。`service` のメソッド可否は辺ポリシーが表す。
 - `token_use` の値（`tenant_access` 等）を scope 文字列として重複表現しない。
 - `tenant_access`、`event_access`、`registration` の権限判定は scope、資格情報の種別判定は `token_use` が担う。
 - `token_use = service` の認可は、呼び出し元ワークロードと宛先メソッドに対する Service Gateway の辺ポリシーが担う。
+- 外部トークンの送信者拘束（DPoP）は Service Gateway を境界として外部トークンの層で完結する。内部 JWT は `cnf` 等の束縛クレームを持たず、送信者拘束を持ち込まない。
+
+## ワークロード認証との分離
+
+ワークロード資格情報の取得・検証・運搬は workload_auth.md に従う。
+SPIRE／Google認証の選択は内部JWTの構造・署名方式・120秒の有効期間を変更しない。
+Gatewayは1つのアプリ配備単位とし、全インスタンスが共通issuerと論理ID体系で発行する。JWKSは認証不要で公開し、全インスタンスの検証に必要な同じ公開鍵集合を配布する。
+バックエンドで認証するtransportの主体はGatewayであり、内部JWTのsubに入る前段サービスとは別に検証する。
+Gateway入口の「提示者＝文脈aud」は、検証済み論理サービスIDを使って行う。
 
 ## 署名
 
 - 方式: ES256（ECDSA / P-256 / SHA-256）。他の署名方式は認めない。
-- 鍵: 楕円曲線 P-256 の鍵ペア。公開鍵は JWKS で配布する。
+- 鍵: 楕円曲線 P-256 の鍵ペア。署名検証用公開鍵だけを認証不要のHTTPS JWKSで配布する。秘密鍵・共通鍵を含めない。取得側は設定済みissuerとJWKS URLを使い、token内の任意URLへ追従しない。
+- 配布: キャッシュTTL 5分、全インスタンスの鍵集合、通常・緊急切替の契約は service_gateway_spec.md に従う。originから削除した鍵が既存キャッシュから即時失効するとは扱わない。
 - 鍵の識別: JWT ヘッダに `kid`（鍵 ID）を必須とし、署名検証に用いる公開鍵を一意に指す。
 
 ### JWT ヘッダ

@@ -4,14 +4,19 @@
 位置づけ: サービス（デプロイ単位）視点の図。ドメイン（コンテキスト）視点は domain/context_map.md が正本
 内容の根拠: spec-base/README.md（通信規約・索引）と service/ 各仕様。図と本文が食い違う場合は各仕様が正
 
+図のService Gatewayは論理的な1サービス・1アプリ配備を表す。Composeは外部用とworkload用の2listener、Cloud Runは公開の1listenerを使う。
+外部クライアントとサービスAはいずれもGatewayの受信側RPCを呼び、Gatewayの生成クライアントが後段を呼ぶ。protoは同一契約を再利用し必要箇所だけ独自定義する。
+Cloud RunのGatewayはInvoker IAMを無効化してRPCごとにアプリ認証・認可を行い、後段のworkload認証とIAMを維持する。JWKSは匿名公開する。
+方式と切替は workload_auth.md に従う。
+
 前提（凡例に共通）
 
 - Auth、Edge Bridge Service、および Observation → Flow／Line（直接呼び出し）以外の同期 RPC はすべて Service Gateway を経由する。図では見やすさのためサービス間の GW を省略
 - Edge Bridge Service は WebRTC のシグナリングのみを担い、Service Gateway の後ろに置かない。映像はページ間で直接やりとりする
 - PubSub は情報更新 push の3トピックのみ。at-least-once・イベント単位の順序キー・受信側冪等
-- 実線＝同期 RPC（gRPC／Connect）または HTTP、太線（==>）＝PubSub、点線＝リスナー・参照系・外部プッシュ
-- BFF は図では省略（管理・設計 UI の Auth・GW への接続は BFF 経由）
-  スタッフアプリはログインのみ直接 Auth と接続し、Token Exchange は BFF が代行（アプリ→BFF→Auth。構成B）。API 呼び出しはアプリ→GW のまま
+- 実線＝同期RPC（Connect。直接例外のプロトコルは各仕様に従う）または限定HTTP例外、太線（==>）＝PubSub、点線＝リスナー・参照系・外部プッシュ
+- BFF は図では省略（管理・設計 UI の Auth・GW への接続は BFF 経由。外部トークンは BFF のサーバ側に保持し、ブラウザへ渡さない）
+  スタッフアプリはログインも Token Exchange も直接 Auth と行う（public client の直接交換。トークンは DPoP で鍵束縛）。API 呼び出しはアプリ→GW のまま。BFF は現場運用の認証経路上にない
 
 ## 1. サービス間の関係全体図
 
@@ -26,7 +31,7 @@ flowchart LR
 
   Auth["Auth（IdP）<br/>OIDC 標準 HTTP"]
   EB["Edge Bridge Service<br/>WebRTC シグナリング（GW を経由しない）"]
-  GW["Service Gateway<br/>（Auth 以外の呼び出しが経由）"]
+  GW["Service Gateway<br/>（明示例外以外の同期RPC）"]
 
   subgraph SV["マイクロサービス（gRPC / Connect）"]
     direction TB
@@ -53,7 +58,7 @@ flowchart LR
   end
 
   %% 認証（OIDC。GW を経由しない唯一の HTTP）
-  StaffApp -. "ログイン（認可コード＋PKCE）" .-> Auth
+  StaffApp -. "ログイン・Token Exchange（認可コード＋PKCE、DPoP）" .-> Auth
   AdminUI -. "アカウント登録／ログイン／所有権取得専用トークン" .-> Auth
 
   %% クライアント → GW → 各サービス
@@ -97,7 +102,7 @@ flowchart LR
 
 補足
 
-- IdP 発行トークンは Service Gateway が検証し、内部 JWT へ変換して各サービスへ転送する。JWKS と introspection の endpoint は OIDC Discovery と Authorization Server Metadata から解決する（service_gateway.md）
+- IdP 発行トークンは Service Gateway が検証し、内部 JWT へ変換して各サービスへ転送する。JWKS と introspection の endpoint は OIDC Discovery と Authorization Server Metadata から解決する（service_gateway_spec.md）
   各サービスは Service Gateway の JWKS で内部 JWT をローカル検証する（図では省略）
 - introspection は管理系書き込み6 RPCの active／revoked 確認に限定し、同じ6 RPCの現在権限は Tenant Management が同一 DB で確認する
 - Flow／Line の呼び出し元は観測のみで、この呼び出しは Service Gateway を経由しない（各仕様参照）。Realtime・Notification は Operation の支援機構（独立コンテキストではない）
