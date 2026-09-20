@@ -336,10 +336,15 @@ StartTenantRegistrationには、送信元単位のレート制限、ボット対
 
 ## 監査ログ
 
-- 記録項目: timestamp、request_id、メソッド（サービス＋RPC）、client_id、sub、token_use、txn、発行した内部 JWT の jti、result、failure_reason、source_ip。`src_jti` と `origin_sub` はユーザー起点の場合だけ記録する
+- 記録項目: timestamp、trace_id、span_id、メソッド（サービス＋RPC）、client_id、sub、token_use、txn、発行した内部 JWT の jti、result、failure_reason、source_ip。`src_jti` と `origin_sub` はユーザー起点の場合だけ記録する
 - サービス間再発行では、呼び出し元ワークロード、照合した辺、origin_sub の有無も記録する
 - 外部トークン本体・内部JWT本体・Googleワークロードトークン・SVID秘密鍵をログへ出してはならない
-- request_id は宛先サービスへ伝播し、IdP 監査ログ（src_jti）・サービス側ログと突き合わせ可能にする
+- ホップをまたぐ相関は W3C Trace Context で行う。`traceparent`（gRPC／Connect ではリクエストメタデータ）で宛先サービスへ伝搬し、trace_id・span_id をサービス側ログと突き合わせ可能にする。独自の相関識別子とそのためのヘッダは設けない
+- 外部クライアントから受信した trace context は引き継がず、要求ごとに新しいトレースを開始する（外部から与えられた値を監査の相関キーにしないため）
+- trace_id は、トレースのエクスポート設定やサンプリングの結果によらず、要求ごとに必ず生成して伝搬する
+- 1つのトレースに本サービスの監査レコードが複数並ぶ場合があるため、個々の要求は trace_id と span_id の組で指す
+- 識別子を応答ヘッダでクライアントへ返さない
+- IdP 監査ログとの突き合わせは `src_jti` で行う
 
 ## 未確定事項
 
