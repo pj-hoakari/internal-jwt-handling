@@ -35,7 +35,7 @@ var DefaultRetryBackoff = []time.Duration{100 * time.Millisecond, 200 * time.Mil
 var (
 	ErrMissingURL       = errors.New("JWKS URL is required")
 	ErrInvalidURL       = errors.New("JWKS URL is not an HTTP URL")
-	ErrUnknownKeyID     = errors.New("unknown JWT key ID")
+	ErrUnknownKeyID     = internaljwt.ErrUnknownKeyID
 	ErrFailureCooldown  = errors.New("JWKS fetch is in its failure cooldown")
 	ErrFetch            = errors.New("fetch JWKS")
 	ErrUnexpectedStatus = errors.New("unexpected JWKS response status")

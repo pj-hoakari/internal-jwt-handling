@@ -43,10 +43,18 @@ type staticKeys struct {
 func (s staticKeys) Key(_ context.Context, keyID string) (*ecdsa.PublicKey, error) {
 	key, ok := s.keys[keyID]
 	if !ok {
-		return nil, fmt.Errorf("%w: %q", errNoSuchKey, keyID)
+		return nil, fmt.Errorf("%w: %q: %w", ErrUnknownKey, keyID, errNoSuchKey)
 	}
 
 	return key, nil
+}
+
+var errKeyStoreDown = errors.New("store down")
+
+type resolverFunc func(ctx context.Context, keyID string) (*ecdsa.PublicKey, error)
+
+func (f resolverFunc) Key(ctx context.Context, keyID string) (*ecdsa.PublicKey, error) {
+	return f(ctx, keyID)
 }
 
 // resolverFor is the key resolver of a JWKS, the way a service holds the
@@ -632,5 +640,59 @@ func TestVerifyHonoursTheConfiguredLeeway(t *testing.T) {
 	_, err := verifier.Verify(t.Context(), signer.sign(t, claims))
 	if !errors.Is(err, jwt.ErrTokenExpired) {
 		t.Fatalf("Verify = %v, want %v", err, jwt.ErrTokenExpired)
+	}
+}
+
+func TestVerifySeparatesAnUnknownKidFromAFailedKeyResolution(t *testing.T) {
+	t.Parallel()
+
+	signer := newSigner(t)
+
+	tests := map[string]struct {
+		keys    KeyResolver
+		want    []error
+		notWant []error
+	}{
+		"a kid the resolver does not hold": {
+			keys:    staticKeys{keys: map[string]*ecdsa.PublicKey{}},
+			want:    []error{ErrInvalidToken, ErrUnknownKey, internaljwt.ErrUnknownKeyID, errNoSuchKey},
+			notWant: []error{ErrKeyResolution},
+		},
+		"a resolver that cannot reach its key store": {
+			keys: resolverFunc(func(context.Context, string) (*ecdsa.PublicKey, error) {
+				return nil, errKeyStoreDown
+			}),
+			want:    []error{ErrKeyResolution, errKeyStoreDown},
+			notWant: []error{ErrInvalidToken, ErrUnknownKey},
+		},
+		"a resolver that hands out neither a key nor an error": {
+			//nolint:nilnil
+			keys: resolverFunc(func(context.Context, string) (*ecdsa.PublicKey, error) {
+				return nil, nil
+			}),
+			want:    []error{ErrKeyResolution},
+			notWant: []error{ErrInvalidToken, ErrUnknownKey},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			verifier := newVerifier(t, test.keys, fixedClock())
+
+			_, err := verifier.Verify(t.Context(), signer.sign(t, validClaims()))
+			for _, want := range test.want {
+				if !errors.Is(err, want) {
+					t.Fatalf("Verify = %v, want it to wrap %v", err, want)
+				}
+			}
+
+			for _, notWant := range test.notWant {
+				if errors.Is(err, notWant) {
+					t.Fatalf("Verify = %v, want it not to wrap %v", err, notWant)
+				}
+			}
+		})
 	}
 }

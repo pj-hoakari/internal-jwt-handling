@@ -31,7 +31,8 @@ var (
 	ErrInvalidToken        = errors.New("invalid internal JWT")
 	ErrUnexpectedTokenType = errors.New("unexpected JWT typ header: an internal JWT is a JWT")
 	ErrMissingKeyID        = errors.New("JWT kid header is required")
-	ErrUnknownKey          = errors.New("no verification key for the JWT kid")
+	ErrUnknownKey          = internaljwt.ErrUnknownKeyID
+	ErrKeyResolution       = errors.New("resolve the verification key")
 
 	ErrAudienceCount    = errors.New("an internal JWT names exactly one audience")
 	ErrMissingClaim     = errors.New("missing claim")
@@ -131,6 +132,10 @@ func (v *Verifier) Verify(ctx context.Context, token string) (internaljwt.Claims
 	var claims internaljwt.Claims
 
 	if _, err := v.parser.ParseWithClaims(token, &claims, v.keyFunc(ctx)); err != nil {
+		if errors.Is(err, ErrKeyResolution) {
+			return internaljwt.Claims{}, err
+		}
+
 		return internaljwt.Claims{}, fmt.Errorf("%w: %w", ErrInvalidToken, err)
 	}
 
@@ -168,7 +173,15 @@ func (v *Verifier) keyFunc(ctx context.Context) jwt.Keyfunc {
 
 		key, err := v.keys.Key(ctx, keyID)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %w", ErrUnknownKey, err)
+			if errors.Is(err, ErrUnknownKey) {
+				return nil, err
+			}
+
+			return nil, fmt.Errorf("%w: %w", ErrKeyResolution, err)
+		}
+
+		if key == nil {
+			return nil, fmt.Errorf("%w: the resolver returned no key for kid %q", ErrKeyResolution, keyID)
 		}
 
 		return key, nil
