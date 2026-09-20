@@ -184,8 +184,8 @@ func TestKeyRateLimitsUnknownKeyIDRefresh(t *testing.T) {
 	}
 
 	for range 3 {
-		if _, err := cache.Key(context.Background(), "key-2"); !errors.Is(err, ErrUnknownKeyID) {
-			t.Fatalf("Key error = %v, want %v while the unknown kid is rate limited", err, ErrUnknownKeyID)
+		if _, err := cache.Key(context.Background(), "key-2"); !errors.Is(err, internaljwt.ErrUnknownKeyID) {
+			t.Fatalf("Key error = %v, want %v while the unknown kid is rate limited", err, internaljwt.ErrUnknownKeyID)
 		}
 	}
 
@@ -285,8 +285,8 @@ func TestKeyForgetsAWithdrawnKeyID(t *testing.T) {
 	jwks.serve(current)
 	clock.add(DefaultCacheTTL)
 
-	if _, err := cache.Key(context.Background(), "key-2"); !errors.Is(err, ErrUnknownKeyID) {
-		t.Fatalf("Key for the withdrawn kid error = %v, want %v", err, ErrUnknownKeyID)
+	if _, err := cache.Key(context.Background(), "key-2"); !errors.Is(err, internaljwt.ErrUnknownKeyID) {
+		t.Fatalf("Key for the withdrawn kid error = %v, want %v", err, internaljwt.ErrUnknownKeyID)
 	}
 
 	if _, err := cache.Key(context.Background(), "key-1"); err != nil {
@@ -689,8 +689,8 @@ func TestKeyAcceptsADocumentWithoutKeys(t *testing.T) {
 
 	cache, _ := newTestCache(t, Config{URL: testURL, HTTPClient: client})
 
-	if _, err := cache.Key(context.Background(), "key-1"); !errors.Is(err, ErrUnknownKeyID) {
-		t.Fatalf("Key error = %v, want %v", err, ErrUnknownKeyID)
+	if _, err := cache.Key(context.Background(), "key-1"); !errors.Is(err, internaljwt.ErrUnknownKeyID) {
+		t.Fatalf("Key error = %v, want %v", err, internaljwt.ErrUnknownKeyID)
 	}
 }
 

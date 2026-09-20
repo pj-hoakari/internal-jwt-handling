@@ -32,7 +32,6 @@ var (
 	ErrInvalidToken        = errors.New("invalid internal JWT")
 	ErrUnexpectedTokenType = errors.New("unexpected JWT typ header: an internal JWT is a JWT")
 	ErrMissingKeyID        = errors.New("JWT kid header is required")
-	ErrUnknownKey          = internaljwt.ErrUnknownKeyID
 	ErrKeyResolution       = errors.New("resolve the verification key")
 
 	ErrAudienceCount    = errors.New("an internal JWT names exactly one audience")
@@ -189,7 +188,7 @@ func (v *Verifier) keyFunc(ctx context.Context) jwt.Keyfunc {
 
 		key, err := v.keys.Key(ctx, keyID)
 		if err != nil {
-			if errors.Is(err, ErrUnknownKey) {
+			if errors.Is(err, internaljwt.ErrUnknownKeyID) {
 				return nil, err
 			}
 

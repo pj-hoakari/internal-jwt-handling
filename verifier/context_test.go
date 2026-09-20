@@ -260,7 +260,7 @@ func TestContextVerifyRejectsWhatVerifyRejects(t *testing.T) {
 
 				return signWith(t, jwt.SigningMethodES256, signer.key, "rotated-away", validClaims())
 			},
-			want:    []error{ErrInvalidToken, ErrUnknownKey, errNoSuchKey},
+			want:    []error{ErrInvalidToken, internaljwt.ErrUnknownKeyID, errNoSuchKey},
 			notWant: []error{ErrKeyResolution},
 		},
 		"a resolver that cannot reach its key store": {
@@ -273,7 +273,7 @@ func TestContextVerifyRejectsWhatVerifyRejects(t *testing.T) {
 				return signer.sign(t, validClaims())
 			},
 			want:    []error{ErrKeyResolution, errKeyStoreDown},
-			notWant: []error{ErrInvalidToken, ErrUnknownKey},
+			notWant: []error{ErrInvalidToken, internaljwt.ErrUnknownKeyID},
 		},
 		"of another token type": {
 			keys: signer.keys,

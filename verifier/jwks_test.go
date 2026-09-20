@@ -95,24 +95,6 @@ func newVerifierOn(t *testing.T, keys verifier.KeyResolver) *verifier.Verifier {
 	return tokenVerifier
 }
 
-func TestUnknownKeyIDIsOneSentinelAcrossThePackages(t *testing.T) {
-	t.Parallel()
-
-	sentinels := map[string]error{
-		"internaljwt.ErrUnknownKeyID": internaljwt.ErrUnknownKeyID,
-		"jwks.ErrUnknownKeyID":        jwks.ErrUnknownKeyID,
-		"verifier.ErrUnknownKey":      verifier.ErrUnknownKey,
-	}
-
-	for name, err := range sentinels {
-		for otherName, other := range sentinels {
-			if !errors.Is(err, other) {
-				t.Fatalf("errors.Is(%s, %s) = false, want true", name, otherName)
-			}
-		}
-	}
-}
-
 func TestVerifyAcceptsATokenTheJWKSPublishes(t *testing.T) {
 	t.Parallel()
 
@@ -140,7 +122,7 @@ func TestVerifyRejectsAKidTheJWKSDoesNotPublish(t *testing.T) {
 	tokenVerifier := newVerifierOn(t, newCache(t, server.URL, server.Client()))
 
 	_, err := tokenVerifier.Verify(t.Context(), rotatedAway.Token)
-	for _, want := range []error{verifier.ErrInvalidToken, verifier.ErrUnknownKey, jwks.ErrUnknownKeyID} {
+	for _, want := range []error{verifier.ErrInvalidToken, internaljwt.ErrUnknownKeyID} {
 		if !errors.Is(err, want) {
 			t.Fatalf("Verify = %v, want it to wrap %v", err, want)
 		}
@@ -193,7 +175,7 @@ func TestVerifyReportsAFailedJWKSFetchAsAKeyResolutionFailure(t *testing.T) {
 				t.Fatalf("Verify = %v, want it to wrap %v", err, verifier.ErrKeyResolution)
 			}
 
-			for _, notWant := range []error{verifier.ErrInvalidToken, verifier.ErrUnknownKey} {
+			for _, notWant := range []error{verifier.ErrInvalidToken, internaljwt.ErrUnknownKeyID} {
 				if errors.Is(err, notWant) {
 					t.Fatalf("Verify = %v, want it not to wrap %v", err, notWant)
 				}

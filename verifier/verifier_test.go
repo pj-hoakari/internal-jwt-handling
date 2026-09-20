@@ -32,7 +32,7 @@ const (
 var testNow = time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)
 
 // errNoSuchKey is what the test resolver returns for a kid it does not hold.
-// A caller must be able to reach it through ErrUnknownKey.
+// A caller must be able to reach it through internaljwt.ErrUnknownKeyID.
 var errNoSuchKey = errors.New("no such test key")
 
 // staticKeys resolves the kids of a fixed set of keys.
@@ -43,7 +43,7 @@ type staticKeys struct {
 func (s staticKeys) Key(_ context.Context, keyID string) (*ecdsa.PublicKey, error) {
 	key, ok := s.keys[keyID]
 	if !ok {
-		return nil, fmt.Errorf("%w: %q: %w", ErrUnknownKey, keyID, errNoSuchKey)
+		return nil, fmt.Errorf("%w: %q: %w", internaljwt.ErrUnknownKeyID, keyID, errNoSuchKey)
 	}
 
 	return key, nil
@@ -354,7 +354,7 @@ func TestVerifyRejectsAnUnverifiableToken(t *testing.T) {
 
 				return signWith(t, jwt.SigningMethodES256, signer.key, "rotated-away", validClaims())
 			},
-			want: []error{ErrInvalidToken, ErrUnknownKey, errNoSuchKey, jwt.ErrTokenUnverifiable},
+			want: []error{ErrInvalidToken, internaljwt.ErrUnknownKeyID, errNoSuchKey, jwt.ErrTokenUnverifiable},
 		},
 		"without a kid header": {
 			token: func(t *testing.T) string {
@@ -701,7 +701,7 @@ func TestVerifySeparatesAnUnknownKidFromAFailedKeyResolution(t *testing.T) {
 	}{
 		"a kid the resolver does not hold": {
 			keys:    staticKeys{keys: map[string]*ecdsa.PublicKey{}},
-			want:    []error{ErrInvalidToken, ErrUnknownKey, internaljwt.ErrUnknownKeyID, errNoSuchKey},
+			want:    []error{ErrInvalidToken, internaljwt.ErrUnknownKeyID, errNoSuchKey},
 			notWant: []error{ErrKeyResolution},
 		},
 		"a resolver that cannot reach its key store": {
@@ -709,7 +709,7 @@ func TestVerifySeparatesAnUnknownKidFromAFailedKeyResolution(t *testing.T) {
 				return nil, errKeyStoreDown
 			}),
 			want:    []error{ErrKeyResolution, errKeyStoreDown},
-			notWant: []error{ErrInvalidToken, ErrUnknownKey},
+			notWant: []error{ErrInvalidToken, internaljwt.ErrUnknownKeyID},
 		},
 		"a resolver that hands out neither a key nor an error": {
 			//nolint:nilnil
@@ -717,7 +717,7 @@ func TestVerifySeparatesAnUnknownKidFromAFailedKeyResolution(t *testing.T) {
 				return nil, nil
 			}),
 			want:    []error{ErrKeyResolution},
-			notWant: []error{ErrInvalidToken, ErrUnknownKey},
+			notWant: []error{ErrInvalidToken, internaljwt.ErrUnknownKeyID},
 		},
 	}
 
