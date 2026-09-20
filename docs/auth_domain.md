@@ -15,13 +15,16 @@
 | 所属 / Membership | どのテナント／イベントにどのロールで属すか<br>Relation が読み書き所有 |
 | `tenant_access` token | テナント文脈の JWT |
 | `event_access` token | Token Exchange で発行するイベント文脈トークン |
-| Token Exchange | tenant_access→event_access の一方向のみ |
-| scope | tenant.read/write／events.read/write |
+| Token Exchange | tenant_access→event_access の一方向のみ<br>subject_token の発行先 client と要求 client の一致を検証し、public client も自ら交換する |
+| scope | tenant.read／tenant.write／events.read と、権限クラスで分けた書き込み scope<br>events.manage（設計・構成）／events.operate（現場運用）／events.report（計測報告・稼働通知） |
+| 送信者拘束 / sender constraint | public client へ発行する外部トークンは、クライアントの鍵の所持証明（DPoP）で提示者を束縛する<br>鍵はクライアントの保護領域に取り出せない形で保持する<br>confidential client（BFF）は client 認証で代替し対象にしない |
+| client scope 上限 / client scope cap | client ごとに許可する scope の上限。ロールから導いた scope との積を発行する |
 | resource / audience | 対象イベント（URI）／バックエンド API 全体の論理 audience（例 backend-api。登録は1つ）<br>検証は Service Gateway と Edge Bridge Service が行う |
 | 所有権取得専用の最小トークン / registration token | テナント文脈なしで仮テナントの所有権を取得するためのトークン<br>scope は `tenant.claim` のみで、ClaimTenantOwnership に限定 |
 | 関係参照サービス / relation service | 所属とロールを所有し参照を返す |
 
-ロール→scope：オーナー＝全scope／スタッフ＝read系／管理者（予約）＝オーナー相当
+ロール→scope：オーナー＝全scope／スタッフ＝tenant.write を除く全scope／管理者（予約）＝オーナー相当
+発行する scope はロールとクライアント種別の両方から決める（client scope 上限との積）
 ロールは JWT claim に載せない
 
 ## ドメインイベント
@@ -35,7 +38,7 @@
 | テナントアクセストークン発行された | TenantAccessTokenIssued | 認可コードフロー |
 | 所有権取得専用トークン発行された | RegistrationTokenIssued | テナント未指定の認可コードフロー（仮テナントの所有権取得） |
 | イベントアクセストークン発行された | EventAccessTokenIssued | Token Exchange 成功 |
-| トークン交換拒否された | TokenExchangeDenied | 遷移／audience／scope 違反 |
+| トークン交換拒否された | TokenExchangeDenied | 遷移／audience／scope 違反、subject_token の発行先 client と要求 client の不一致、archived イベントへの交換、DPoP の鍵不一致 |
 | トークン失効された | TokenRevoked | 失効要求 |
 | 監査ログ記録された | AuditLogRecorded | ログイン／ログアウト／発行／交換／失効の成否 |
 | ユーザーがテナントに所属した | UserJoinedTenant | メンバー追加 |
@@ -49,6 +52,7 @@
 
 - relation model 制約：1ユーザーは複数テナントに所属しうる／event∈tenant／event-role⇒tenant-role／tenant-role と event-role は独立
 - Token Exchange は tenant→event の一方向のみ
+- 発行する scope は client scope 上限とロール由来 scope の積を超えない
 - ロールは scope 発行判定のみに使用（claim に載せない）
 - 識別子はテナントが正本で存在しないIDへ所属を作らない
 - イベント状態はテナントが所有し本コンテキストは持たない

@@ -1,7 +1,7 @@
 # 認証・認可コンテキスト 入出力整理
 
 ドメイン定義: auth_domain.md
-デプロイ単位: Auth（IdP）（IdP、OIDC 標準 HTTP）。関係参照（`tolo.relation.v1`）は tenant_management_spec.md が実装する
+デプロイ単位: Auth（IdP）（IdP、OIDC 標準 HTTP）。関係参照（`tolo.relation.v1`）は Tenant Management が実装する
 対象外: Auth と関係参照の間の内部インタフェース
 
 ## ドメインイベント↔入出力 対応

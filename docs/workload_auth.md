@@ -3,7 +3,7 @@
 ## 適用範囲と責務
 
 本仕様はService Gatewayに到達するサービス間RPC、Gatewayから後段への転送、ObservationからFlow Control／Line Controlへの直接RPCに適用する。
-外部クライアントのIdP認証・DPoP、AuthのHTTP API、Edge BridgeのFirestore認証、PubSubのブローカー認証は別の契約とする。
+外部クライアントのIdP認証・DPoP、AuthのHTTP API、Edge Bridge ServiceのFirestore認証、PubSubのブローカー認証は別の契約とする。
 ワークロード認証は呼び出し元の識別、内部JWTは処理文脈と宛先束縛、辺ポリシーはRPCの呼び出し可否を担う。
 内部JWTの所持だけで呼び出し元ワークロードとして認証しない。
 

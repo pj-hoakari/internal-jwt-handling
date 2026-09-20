@@ -72,7 +72,7 @@ Gateway入口の「提示者＝文脈aud」は、検証済み論理サービスI
 | `jti` | string | 内部 JWT 自体の識別子 |
 | `txn` | string | UUIDv7 の処理チェーン識別子。監査とトレースの相関専用 |
 | `token_use` | string | 用途種別（下表の 4 種） |
-| `client_id` | string | ユーザー系は外部トークンを提示した client。サービス系は呼び出し元サービスの識別子（`sub` と同値） |
+| `client_id` | string | ユーザー系は外部トークンの発行先 client（外部トークンの `client_id` の転記）。サービス系は呼び出し元サービスの識別子（`sub` と同値） |
 
 ### 起点別クレーム
 
@@ -106,14 +106,14 @@ Gateway入口の「提示者＝文脈aud」は、検証済み論理サービスI
 
 | claim | 型 | 内容 |
 |---|---|---|
-| `tenant_id` | string | テナント公開 ID（16 桁の　Hex　文字列）。内部 ID ではない |
-| `event_id` | string | イベント公開 ID（16 桁の　Hex　文字列）。内部 ID ではない |
+| `tenant_id` | string | テナント公開 ID（ランダムな 16 文字 hex）。内部 ID ではない |
+| `event_id` | string | イベント公開 ID（ランダムな 16 文字 hex）。内部 ID ではない |
 
 - `tenant_id` は `token_use = tenant_access` および `event_access` の内部 JWT に含まれ、値が非空であることを要する。
 - `event_id` は `token_use = event_access` の内部 JWT に含まれ、値が非空であることを要する。
 - ユーザー起点の `token_use = service` は、変換元の文脈トークンが持つ `tenant_id`／`event_id` を引き写す。
 - マシン起点の `token_use = service` は文脈トークンの有無にかかわらず、`tenant_id`／`event_id` を持たない。
-- 公開 ID はいずれもランダムな 16 桁十六進の文字列であり、内部で用いる UUIDv7 等の内部 ID ではない。テナント・イベント操作の識別にはこの公開 ID を用いる。
+- 公開 ID はいずれもランダムな 16 文字 hex の文字列であり、内部で用いる UUIDv7 等の内部 ID ではない。テナント・イベント操作の識別にはこの公開 ID を用いる。
 - 全サービスの proto の `tenant_id`／`event_id` フィールドも公開 ID を値に取る。クレームとフィールドは同名かつ同義であり、そのまま突合できる。内部主キー（UUIDv7）は各サービスの内部に閉じ、proto にも本クレームにも現れない。
 - `registration`の内部JWTは`tenant_id`／`event_id`を持たない。
   対象テナントはClaimTenantOwnershipのリクエストと一回限りの所有権取得トークンで指定し、IdPのAccess Tokenにはテナント文脈を持たせない。
