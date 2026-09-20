@@ -643,6 +643,52 @@ func TestVerifyHonoursTheConfiguredLeeway(t *testing.T) {
 	}
 }
 
+func TestVerifyMatchesTheAudienceItWasBuiltFor(t *testing.T) {
+	t.Parallel()
+
+	signer := newSigner(t)
+
+	tests := map[string]struct {
+		audience jwt.ClaimStrings
+		want     []error
+	}{
+		"another audience": {
+			audience: jwt.ClaimStrings{"tolo-observation"},
+			want:     []error{ErrInvalidToken, jwt.ErrTokenInvalidAudience},
+		},
+		"ours alongside another audience": {
+			audience: jwt.ClaimStrings{testAudience, "tolo-observation"},
+			want:     []error{ErrAudienceCount},
+		},
+		"no audience at all": {
+			audience: nil,
+			want:     []error{ErrInvalidToken, jwt.ErrTokenInvalidClaims, jwt.ErrTokenRequiredClaimMissing},
+		},
+		"an empty audience": {
+			audience: jwt.ClaimStrings{""},
+			want:     []error{ErrInvalidToken, jwt.ErrTokenInvalidAudience},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			claims := validClaims()
+			claims.Audience = test.audience
+
+			verifier := newVerifier(t, signer.keys, fixedClock())
+
+			_, err := verifier.Verify(t.Context(), signer.sign(t, claims))
+			for _, want := range test.want {
+				if !errors.Is(err, want) {
+					t.Fatalf("Verify = %v, want it to wrap %v", err, want)
+				}
+			}
+		})
+	}
+}
+
 func TestVerifySeparatesAnUnknownKidFromAFailedKeyResolution(t *testing.T) {
 	t.Parallel()
 
