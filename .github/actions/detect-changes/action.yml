@@ -1,0 +1,46 @@
+name: Detect changes
+description: Report whether the triggering pull request or push changes any of the given paths. Requires a checkout with full history.
+
+inputs:
+    paths:
+        description: Newline-separated git pathspecs to watch. The directory of this action is always watched.
+        required: true
+
+outputs:
+    changed:
+        description: "'false' when no watched path changed, otherwise 'true' (including when the changed range cannot be determined)."
+        value: ${{ steps.detect.outputs.changed }}
+
+runs:
+    using: composite
+    steps:
+        - name: Detect changes
+          id: detect
+          shell: bash
+          env:
+              PATHS: ${{ inputs.paths }}
+              EVENT_NAME: ${{ github.event_name }}
+              PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+              PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+              PUSH_BEFORE: ${{ github.event.before }}
+              PUSH_AFTER: ${{ github.event.after }}
+          run: |
+              case "$EVENT_NAME" in
+                pull_request) range="$PR_BASE_SHA...$PR_HEAD_SHA" ;;
+                push) range="$PUSH_BEFORE..$PUSH_AFTER" ;;
+                *) range="" ;;
+              esac
+
+              paths=("${GITHUB_ACTION_PATH#"$GITHUB_WORKSPACE"/}")
+              while IFS= read -r path; do
+                paths+=("$path")
+              done < <(printf '%s\n' "$PATHS" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e '/^$/d')
+
+              if [ -n "$range" ] && git diff --quiet "$range" -- "${paths[@]}"; then
+                changed=false
+              else
+                changed=true
+              fi
+
+              echo "range=${range:-none} changed=$changed"
+              echo "changed=$changed" >> "$GITHUB_OUTPUT"
