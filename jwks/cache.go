@@ -35,7 +35,6 @@ var DefaultRetryBackoff = []time.Duration{100 * time.Millisecond, 200 * time.Mil
 var (
 	ErrMissingURL       = errors.New("JWKS URL is required")
 	ErrInvalidURL       = errors.New("JWKS URL is not an HTTP URL")
-	ErrUnknownKeyID     = errors.New("unknown JWT key ID")
 	ErrFailureCooldown  = errors.New("JWKS fetch is in its failure cooldown")
 	ErrFetch            = errors.New("fetch JWKS")
 	ErrUnexpectedStatus = errors.New("unexpected JWKS response status")
@@ -154,7 +153,7 @@ func (c *Cache) Key(ctx context.Context, keyID string) (*ecdsa.PublicKey, error)
 		}
 
 		if now.Sub(c.lastRefresh) < c.refreshCooldown {
-			return nil, fmt.Errorf("%w: %q", ErrUnknownKeyID, keyID)
+			return nil, fmt.Errorf("%w: %q", internaljwt.ErrUnknownKeyID, keyID)
 		}
 	}
 
@@ -168,7 +167,7 @@ func (c *Cache) Key(ctx context.Context, keyID string) (*ecdsa.PublicKey, error)
 
 	key, ok := c.keys[keyID]
 	if !ok {
-		return nil, fmt.Errorf("%w: %q", ErrUnknownKeyID, keyID)
+		return nil, fmt.Errorf("%w: %q", internaljwt.ErrUnknownKeyID, keyID)
 	}
 
 	return key, nil

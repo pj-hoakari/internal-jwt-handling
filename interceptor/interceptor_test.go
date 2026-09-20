@@ -2,6 +2,7 @@ package interceptor_test
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"errors"
 	"strings"
 	"testing"
@@ -218,6 +219,110 @@ func TestInterceptorRejectsAnUnusableCredential(t *testing.T) {
 				t.Fatalf("reported error = %v, want it to wrap %v", rejected.err, test.want)
 			}
 		})
+	}
+}
+
+func TestInterceptorReportsAFailedKeyResolutionAsUnavailable(t *testing.T) {
+	t.Parallel()
+
+	token, _, _ := tenantAccessToken(t)
+	reporter := &recorder{}
+	handler := &testHandler{}
+	server := newTestServer(t, handler,
+		newInterceptor(t, newVerifierOn(t, unreachableKeys{}),
+			policies(testProcedure, authz.Policy{Level: authz.LevelAuthenticated}),
+			interceptor.WithErrorReporter(reporter.report),
+		),
+	)
+
+	err := call(t, server, testProcedure, "Bearer "+token)
+	assertBareCode(t, err, connect.CodeUnavailable)
+
+	if handler.reached() {
+		t.Fatal("the handler was reached despite the rejection")
+	}
+
+	if strings.Contains(err.Error(), errKeyStoreDown.Error()) {
+		t.Fatalf("the client saw %v, want it not to carry the cause", err)
+	}
+
+	rejected := reporter.only(t)
+	if rejected.procedure != testProcedure {
+		t.Fatalf("procedure = %q, want %q", rejected.procedure, testProcedure)
+	}
+
+	for _, want := range []error{interceptor.ErrUnavailable, verifier.ErrKeyResolution, errKeyStoreDown} {
+		if !errors.Is(rejected.err, want) {
+			t.Fatalf("reported error = %v, want it to wrap %v", rejected.err, want)
+		}
+	}
+
+	if errors.Is(rejected.err, interceptor.ErrUnauthenticated) {
+		t.Fatalf("reported error = %v, want it not to wrap %v", rejected.err, interceptor.ErrUnauthenticated)
+	}
+}
+
+func TestInterceptorRejectsAKidTheVerifierDoesNotHold(t *testing.T) {
+	t.Parallel()
+
+	token, _, _ := tenantAccessToken(t)
+	reporter := &recorder{}
+	handler := &testHandler{}
+	server := newTestServer(t, handler,
+		newInterceptor(t, newVerifierOn(t, staticKeys{keys: map[string]*ecdsa.PublicKey{}}),
+			policies(testProcedure, authz.Policy{Level: authz.LevelAuthenticated}),
+			interceptor.WithErrorReporter(reporter.report),
+		),
+	)
+
+	err := call(t, server, testProcedure, "Bearer "+token)
+	assertBareCode(t, err, connect.CodeUnauthenticated)
+
+	if handler.reached() {
+		t.Fatal("the handler was reached despite the rejection")
+	}
+
+	rejected := reporter.only(t)
+	for _, want := range []error{interceptor.ErrUnauthenticated, internaljwt.ErrUnknownKeyID} {
+		if !errors.Is(rejected.err, want) {
+			t.Fatalf("reported error = %v, want it to wrap %v", rejected.err, want)
+		}
+	}
+
+	if errors.Is(rejected.err, interceptor.ErrUnavailable) {
+		t.Fatalf("reported error = %v, want it not to wrap %v", rejected.err, interceptor.ErrUnavailable)
+	}
+}
+
+func TestInterceptorReportsAFailedKeyResolutionOnAStreamingCall(t *testing.T) {
+	t.Parallel()
+
+	token, _, _ := tenantAccessToken(t)
+	reporter := &recorder{}
+	wrapped := newInterceptor(t, newVerifierOn(t, unreachableKeys{}),
+		policies(testProcedure, authz.Policy{Level: authz.LevelAuthenticated}),
+		interceptor.WithErrorReporter(reporter.report),
+	)
+
+	reached := false
+	next := wrapped.WrapStreamingHandler(func(context.Context, connect.StreamingHandlerConn) error {
+		reached = true
+
+		return nil
+	})
+
+	err := next(t.Context(), newStreamingConn(testProcedure, "Bearer "+token))
+	assertBareCode(t, err, connect.CodeUnavailable)
+
+	if reached {
+		t.Fatal("the handler was reached despite the rejection")
+	}
+
+	rejected := reporter.only(t)
+	for _, want := range []error{interceptor.ErrUnavailable, verifier.ErrKeyResolution, errKeyStoreDown} {
+		if !errors.Is(rejected.err, want) {
+			t.Fatalf("reported error = %v, want it to wrap %v", rejected.err, want)
+		}
 	}
 }
 

@@ -32,7 +32,7 @@ const (
 var testNow = time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)
 
 // errNoSuchKey is what the test resolver returns for a kid it does not hold.
-// A caller must be able to reach it through ErrUnknownKey.
+// A caller must be able to reach it through internaljwt.ErrUnknownKeyID.
 var errNoSuchKey = errors.New("no such test key")
 
 // staticKeys resolves the kids of a fixed set of keys.
@@ -43,10 +43,18 @@ type staticKeys struct {
 func (s staticKeys) Key(_ context.Context, keyID string) (*ecdsa.PublicKey, error) {
 	key, ok := s.keys[keyID]
 	if !ok {
-		return nil, fmt.Errorf("%w: %q", errNoSuchKey, keyID)
+		return nil, fmt.Errorf("%w: %q: %w", internaljwt.ErrUnknownKeyID, keyID, errNoSuchKey)
 	}
 
 	return key, nil
+}
+
+var errKeyStoreDown = errors.New("store down")
+
+type resolverFunc func(ctx context.Context, keyID string) (*ecdsa.PublicKey, error)
+
+func (f resolverFunc) Key(ctx context.Context, keyID string) (*ecdsa.PublicKey, error) {
+	return f(ctx, keyID)
 }
 
 // resolverFor is the key resolver of a JWKS, the way a service holds the
@@ -346,7 +354,7 @@ func TestVerifyRejectsAnUnverifiableToken(t *testing.T) {
 
 				return signWith(t, jwt.SigningMethodES256, signer.key, "rotated-away", validClaims())
 			},
-			want: []error{ErrInvalidToken, ErrUnknownKey, errNoSuchKey, jwt.ErrTokenUnverifiable},
+			want: []error{ErrInvalidToken, internaljwt.ErrUnknownKeyID, errNoSuchKey, jwt.ErrTokenUnverifiable},
 		},
 		"without a kid header": {
 			token: func(t *testing.T) string {
@@ -632,5 +640,105 @@ func TestVerifyHonoursTheConfiguredLeeway(t *testing.T) {
 	_, err := verifier.Verify(t.Context(), signer.sign(t, claims))
 	if !errors.Is(err, jwt.ErrTokenExpired) {
 		t.Fatalf("Verify = %v, want %v", err, jwt.ErrTokenExpired)
+	}
+}
+
+func TestVerifyMatchesTheAudienceItWasBuiltFor(t *testing.T) {
+	t.Parallel()
+
+	signer := newSigner(t)
+
+	tests := map[string]struct {
+		audience jwt.ClaimStrings
+		want     []error
+	}{
+		"another audience": {
+			audience: jwt.ClaimStrings{"tolo-observation"},
+			want:     []error{ErrInvalidToken, jwt.ErrTokenInvalidAudience},
+		},
+		"ours alongside another audience": {
+			audience: jwt.ClaimStrings{testAudience, "tolo-observation"},
+			want:     []error{ErrAudienceCount},
+		},
+		"no audience at all": {
+			audience: nil,
+			want:     []error{ErrInvalidToken, jwt.ErrTokenInvalidClaims, jwt.ErrTokenRequiredClaimMissing},
+		},
+		"an empty audience": {
+			audience: jwt.ClaimStrings{""},
+			want:     []error{ErrInvalidToken, jwt.ErrTokenInvalidAudience},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			claims := validClaims()
+			claims.Audience = test.audience
+
+			verifier := newVerifier(t, signer.keys, fixedClock())
+
+			_, err := verifier.Verify(t.Context(), signer.sign(t, claims))
+			for _, want := range test.want {
+				if !errors.Is(err, want) {
+					t.Fatalf("Verify = %v, want it to wrap %v", err, want)
+				}
+			}
+		})
+	}
+}
+
+func TestVerifySeparatesAnUnknownKidFromAFailedKeyResolution(t *testing.T) {
+	t.Parallel()
+
+	signer := newSigner(t)
+
+	tests := map[string]struct {
+		keys    KeyResolver
+		want    []error
+		notWant []error
+	}{
+		"a kid the resolver does not hold": {
+			keys:    staticKeys{keys: map[string]*ecdsa.PublicKey{}},
+			want:    []error{ErrInvalidToken, internaljwt.ErrUnknownKeyID, errNoSuchKey},
+			notWant: []error{ErrKeyResolution},
+		},
+		"a resolver that cannot reach its key store": {
+			keys: resolverFunc(func(context.Context, string) (*ecdsa.PublicKey, error) {
+				return nil, errKeyStoreDown
+			}),
+			want:    []error{ErrKeyResolution, errKeyStoreDown},
+			notWant: []error{ErrInvalidToken, internaljwt.ErrUnknownKeyID},
+		},
+		"a resolver that hands out neither a key nor an error": {
+			//nolint:nilnil
+			keys: resolverFunc(func(context.Context, string) (*ecdsa.PublicKey, error) {
+				return nil, nil
+			}),
+			want:    []error{ErrKeyResolution},
+			notWant: []error{ErrInvalidToken, internaljwt.ErrUnknownKeyID},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			verifier := newVerifier(t, test.keys, fixedClock())
+
+			_, err := verifier.Verify(t.Context(), signer.sign(t, validClaims()))
+			for _, want := range test.want {
+				if !errors.Is(err, want) {
+					t.Fatalf("Verify = %v, want it to wrap %v", err, want)
+				}
+			}
+
+			for _, notWant := range test.notWant {
+				if errors.Is(err, notWant) {
+					t.Fatalf("Verify = %v, want it not to wrap %v", err, notWant)
+				}
+			}
+		})
 	}
 }

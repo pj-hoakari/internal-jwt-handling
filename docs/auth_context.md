@@ -26,5 +26,5 @@
 
 | 接点 | 対応 |
 |---|---|
-| 全サービスの認可 | JWT（`tenant_access`／`event_access`）＋ scope。IdP 発行 JWT は原則 Service Gateway が検証して内部 JWT へ変換し、各サービスは Service Gateway の JWKS で内部 JWT をローカル検証する（service_gateway.md）。明示例外は Edge Bridge Service で、`event_access` を直接検証する（Edge Bridge Service） |
+| 全サービスの認可 | JWT（`tenant_access`／`event_access`）＋ scope。IdP 発行 JWT は原則 Service Gateway が検証して内部 JWT へ変換し、各サービスは Service Gateway の JWKS で内部 JWT をローカル検証する（service_gateway_spec.md）。明示例外は Edge Bridge Service で、`event_access` を直接検証する（Edge Bridge Service） |
 | 識別子の参照整合（テナントが正本） | 関係参照は同一サービス（Tenant Management）内の参照で存在確認する（RPC を経ない） |

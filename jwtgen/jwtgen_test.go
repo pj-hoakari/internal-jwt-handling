@@ -1,10 +1,15 @@
 package jwtgen
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,6 +17,7 @@ import (
 
 	internaljwt "github.com/pj-hoakari/internal-jwt-handling"
 	"github.com/pj-hoakari/internal-jwt-handling/issuer"
+	"github.com/pj-hoakari/internal-jwt-handling/verifier"
 )
 
 // verify checks the token against the JWKS the way a receiving service would.
@@ -327,5 +333,324 @@ func TestGenerateRejects(t *testing.T) {
 				t.Fatalf("got %v, want %v", err, test.want)
 			}
 		})
+	}
+}
+
+var errUnknownTestKey = errors.New("no such test key")
+
+type staticResolver struct {
+	keys map[string]*ecdsa.PublicKey
+}
+
+func (r staticResolver) Key(_ context.Context, keyID string) (*ecdsa.PublicKey, error) {
+	key, ok := r.keys[keyID]
+	if !ok {
+		return nil, errUnknownTestKey
+	}
+
+	return key, nil
+}
+
+func verifierFor(t *testing.T, jwks internaljwt.JWKS, audience string) *verifier.Verifier {
+	t.Helper()
+
+	keys := make(map[string]*ecdsa.PublicKey, len(jwks.Keys))
+
+	for _, jwk := range jwks.Keys {
+		key, err := internaljwt.PublicKey(jwk)
+		if err != nil {
+			t.Fatalf("public key %q: %v", jwk.KeyID, err)
+		}
+
+		keys[jwk.KeyID] = key
+	}
+
+	verify, err := verifier.New("service-gateway", audience, staticResolver{keys: keys})
+	if err != nil {
+		t.Fatalf("verifier.New: %v", err)
+	}
+
+	return verify
+}
+
+func signedInput(t *testing.T, token string) string {
+	t.Helper()
+
+	segments := strings.Split(token, ".")
+	if len(segments) != 3 {
+		t.Fatalf("token holds %d segments, want 3", len(segments))
+	}
+
+	header, err := base64.RawURLEncoding.DecodeString(segments[0])
+	if err != nil {
+		t.Fatalf("decode header: %v", err)
+	}
+
+	payload, err := base64.RawURLEncoding.DecodeString(segments[1])
+	if err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+
+	return string(header) + "." + string(payload)
+}
+
+func newTestKey(t *testing.T, curve elliptic.Curve) *ecdsa.PrivateKey {
+	t.Helper()
+
+	key, err := ecdsa.GenerateKey(curve, rand.Reader)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+
+	return key
+}
+
+func TestNewGeneratorWithKeySignsWithTheInjectedKey(t *testing.T) {
+	t.Parallel()
+
+	key := newTestKey(t, elliptic.P256())
+
+	generator, err := NewGeneratorWithKey("gateway-key", key)
+	if err != nil {
+		t.Fatalf("NewGeneratorWithKey: %v", err)
+	}
+
+	if generator.KeyID() != "gateway-key" {
+		t.Errorf("KeyID = %q, want gateway-key", generator.KeyID())
+	}
+
+	jwks, err := generator.JWKS()
+	if err != nil {
+		t.Fatalf("JWKS: %v", err)
+	}
+
+	if len(jwks.Keys) != 1 || jwks.Keys[0].KeyID != "gateway-key" {
+		t.Fatalf("JWKS does not name the injected key: %+v", jwks)
+	}
+
+	published, err := internaljwt.PublicKey(jwks.Keys[0])
+	if err != nil {
+		t.Fatalf("public key: %v", err)
+	}
+
+	if !published.Equal(&key.PublicKey) {
+		t.Fatal("JWKS does not carry the public half of the injected key")
+	}
+
+	output, err := generator.Generate(Config{
+		Issuer: "service-gateway", Audience: "tenant-management", TokenUse: internaljwt.TokenUseService,
+	})
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	if output.JWKS.Keys[0] != jwks.Keys[0] {
+		t.Error("Generate publishes a key other than the injected one")
+	}
+
+	claims, err := verifierFor(t, jwks, "tenant-management").Verify(context.Background(), output.Token)
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+
+	if claims.ID != output.Claims.ID || claims.TokenUse != internaljwt.TokenUseService {
+		t.Errorf("unexpected claims: %+v", claims)
+	}
+}
+
+func TestNewGeneratorWithKeyDefaultsTheKeyID(t *testing.T) {
+	t.Parallel()
+
+	generator, err := NewGeneratorWithKey("", newTestKey(t, elliptic.P256()))
+	if err != nil {
+		t.Fatalf("NewGeneratorWithKey: %v", err)
+	}
+
+	if generator.KeyID() != DefaultKeyID {
+		t.Errorf("KeyID = %q, want %q", generator.KeyID(), DefaultKeyID)
+	}
+}
+
+func TestNewGeneratorWithKeyRejects(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		key  *ecdsa.PrivateKey
+		want error
+	}{
+		"no key":       {key: nil, want: ErrMissingSigningKey},
+		"P-384 key":    {key: newTestKey(t, elliptic.P384()), want: internaljwt.ErrUnsupportedCurve},
+		"P-521 key":    {key: newTestKey(t, elliptic.P521()), want: internaljwt.ErrUnsupportedCurve},
+		"uninit curve": {key: &ecdsa.PrivateKey{}, want: internaljwt.ErrUnsupportedCurve},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			if _, err := NewGeneratorWithKey("k", test.key); !errors.Is(err, test.want) {
+				t.Fatalf("got %v, want %v", err, test.want)
+			}
+		})
+	}
+}
+
+func TestSignUncheckedMatchesTheIssuedWireForm(t *testing.T) {
+	t.Parallel()
+
+	generator, err := NewGenerator("wire")
+	if err != nil {
+		t.Fatalf("NewGenerator: %v", err)
+	}
+
+	tests := map[string]Config{
+		"tenant_access": {
+			Issuer: "service-gateway", Audience: "tenant-management", TokenUse: internaljwt.TokenUseTenantAccess,
+			TenantPublicID: "0123456789abcdef", Scope: "events.read",
+		},
+		"machine-origin service": {
+			Issuer: "service-gateway", Audience: "tenant-management", TokenUse: internaljwt.TokenUseService,
+		},
+		"user-origin service": {
+			Issuer: "service-gateway", Audience: "tenant-management", TokenUse: internaljwt.TokenUseService,
+			OriginSub: "user-1", Scope: "events.read", TenantPublicID: "0123456789abcdef",
+		},
+	}
+
+	for name, config := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			output, err := generator.Generate(config)
+			if err != nil {
+				t.Fatalf("Generate: %v", err)
+			}
+
+			token, err := generator.SignUnchecked(output.Claims)
+			if err != nil {
+				t.Fatalf("SignUnchecked: %v", err)
+			}
+
+			if signedInput(t, token) != signedInput(t, output.Token) {
+				t.Errorf("re-signed payload %q, issued payload %q", signedInput(t, token), signedInput(t, output.Token))
+			}
+
+			verify := verifierFor(t, output.JWKS, "tenant-management")
+
+			issued, err := verify.Verify(context.Background(), output.Token)
+			if err != nil {
+				t.Fatalf("Verify the issued token: %v", err)
+			}
+
+			signed, err := verify.Verify(context.Background(), token)
+			if err != nil {
+				t.Fatalf("Verify the re-signed token: %v", err)
+			}
+
+			if !reflect.DeepEqual(issued, signed) {
+				t.Errorf("re-signed claims %+v, issued claims %+v", signed, issued)
+			}
+
+			if signed.ID != output.Claims.ID || signed.Txn != output.Claims.Txn || signed.Subject != output.Claims.Subject {
+				t.Errorf("re-signed claims do not carry what was handed in: %+v", signed)
+			}
+		})
+	}
+}
+
+func TestSignUncheckedMintsTokensTheVerifierRejects(t *testing.T) {
+	t.Parallel()
+
+	generator, err := NewGenerator("unchecked")
+	if err != nil {
+		t.Fatalf("NewGenerator: %v", err)
+	}
+
+	service, err := generator.Generate(Config{
+		Issuer: "service-gateway", Audience: "tenant-management", TokenUse: internaljwt.TokenUseService,
+	})
+	if err != nil {
+		t.Fatalf("Generate the service token: %v", err)
+	}
+
+	tenant, err := generator.Generate(Config{
+		Issuer: "service-gateway", Audience: "tenant-management", TokenUse: internaljwt.TokenUseTenantAccess,
+		TenantPublicID: "0123456789abcdef", Scope: "events.read",
+	})
+	if err != nil {
+		t.Fatalf("Generate the tenant_access token: %v", err)
+	}
+
+	jwks, err := generator.JWKS()
+	if err != nil {
+		t.Fatalf("JWKS: %v", err)
+	}
+
+	scopedMachineOrigin := service.Claims
+	scopedMachineOrigin.Scope = "events.read"
+
+	tenantlessTenantAccess := tenant.Claims
+	tenantlessTenantAccess.TenantPublicID = ""
+
+	mismatchedClientID := service.Claims
+	mismatchedClientID.ClientID = "another-service"
+
+	tests := map[string]struct {
+		claims internaljwt.Claims
+		want   error
+	}{
+		"scope on a machine-origin service token": {claims: scopedMachineOrigin, want: verifier.ErrForbiddenClaim},
+		"tenant_access without a tenant":          {claims: tenantlessTenantAccess, want: internaljwt.ErrMissingTenantPublicID},
+		"service whose client_id is not its sub":  {claims: mismatchedClientID, want: verifier.ErrClientIDMismatch},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			token, err := generator.SignUnchecked(test.claims)
+			if err != nil {
+				t.Fatalf("SignUnchecked: %v", err)
+			}
+
+			if _, err := verifierFor(t, jwks, "tenant-management").Verify(context.Background(), token); !errors.Is(err, test.want) {
+				t.Fatalf("got %v, want %v", err, test.want)
+			}
+		})
+	}
+}
+
+func TestSignUncheckedHeaderNamesTheGeneratorKey(t *testing.T) {
+	t.Parallel()
+
+	generator, err := NewGeneratorWithKey("header-key", newTestKey(t, elliptic.P256()))
+	if err != nil {
+		t.Fatalf("NewGeneratorWithKey: %v", err)
+	}
+
+	token, err := generator.SignUnchecked(internaljwt.Claims{})
+	if err != nil {
+		t.Fatalf("SignUnchecked: %v", err)
+	}
+
+	segments := strings.Split(token, ".")
+	if len(segments) != 3 {
+		t.Fatalf("token holds %d segments, want 3", len(segments))
+	}
+
+	raw, err := base64.RawURLEncoding.DecodeString(segments[0])
+	if err != nil {
+		t.Fatalf("decode header: %v", err)
+	}
+
+	var header map[string]string
+
+	if err := json.Unmarshal(raw, &header); err != nil {
+		t.Fatalf("unmarshal header: %v", err)
+	}
+
+	want := map[string]string{"alg": internaljwt.Algorithm, "kid": "header-key", "typ": "JWT"}
+	if !reflect.DeepEqual(header, want) {
+		t.Errorf("header = %v, want %v", header, want)
 	}
 }

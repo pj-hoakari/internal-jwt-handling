@@ -6,6 +6,7 @@ import (
 	"crypto/ecdsa"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -31,7 +32,7 @@ var (
 	ErrInvalidToken        = errors.New("invalid internal JWT")
 	ErrUnexpectedTokenType = errors.New("unexpected JWT typ header: an internal JWT is a JWT")
 	ErrMissingKeyID        = errors.New("JWT kid header is required")
-	ErrUnknownKey          = errors.New("no verification key for the JWT kid")
+	ErrKeyResolution       = errors.New("resolve the verification key")
 
 	ErrAudienceCount    = errors.New("an internal JWT names exactly one audience")
 	ErrMissingClaim     = errors.New("missing claim")
@@ -83,6 +84,14 @@ func New(issuerID, audience string, keys KeyResolver, opts ...Option) (*Verifier
 		return nil, ErrMissingAudience
 	}
 
+	return newVerifierFor(issuerID, audience, keys, opts...)
+}
+
+func newVerifierFor(issuerID, audience string, keys KeyResolver, opts ...Option) (*Verifier, error) {
+	if issuerID == "" {
+		return nil, ErrMissingIssuerID
+	}
+
 	if keys == nil {
 		return nil, ErrMissingKeyResolver
 	}
@@ -111,7 +120,6 @@ func New(issuerID, audience string, keys KeyResolver, opts ...Option) (*Verifier
 	verifier.parser = jwt.NewParser(
 		jwt.WithValidMethods([]string{internaljwt.Algorithm}),
 		jwt.WithIssuer(verifier.issuerID),
-		jwt.WithAudience(verifier.audience),
 		jwt.WithExpirationRequired(),
 		jwt.WithIssuedAt(),
 		jwt.WithLeeway(verifier.leeway),
@@ -124,6 +132,10 @@ func New(issuerID, audience string, keys KeyResolver, opts ...Option) (*Verifier
 // Verify parses the token, checks its signature and every claim, and returns
 // the claim set it carries.
 func (v *Verifier) Verify(ctx context.Context, token string) (internaljwt.Claims, error) {
+	return v.verify(ctx, token, v.audience)
+}
+
+func (v *Verifier) verify(ctx context.Context, token, audience string) (internaljwt.Claims, error) {
 	if token == "" {
 		return internaljwt.Claims{}, ErrMissingToken
 	}
@@ -131,7 +143,15 @@ func (v *Verifier) Verify(ctx context.Context, token string) (internaljwt.Claims
 	var claims internaljwt.Claims
 
 	if _, err := v.parser.ParseWithClaims(token, &claims, v.keyFunc(ctx)); err != nil {
+		if errors.Is(err, ErrKeyResolution) {
+			return internaljwt.Claims{}, err
+		}
+
 		return internaljwt.Claims{}, fmt.Errorf("%w: %w", ErrInvalidToken, err)
+	}
+
+	if err := matchAudience(claims.Audience, audience); err != nil {
+		return internaljwt.Claims{}, fmt.Errorf("%w: %w: %w", ErrInvalidToken, jwt.ErrTokenInvalidClaims, err)
 	}
 
 	if err := validateRegisteredClaims(claims); err != nil {
@@ -168,11 +188,31 @@ func (v *Verifier) keyFunc(ctx context.Context) jwt.Keyfunc {
 
 		key, err := v.keys.Key(ctx, keyID)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %w", ErrUnknownKey, err)
+			if errors.Is(err, internaljwt.ErrUnknownKeyID) {
+				return nil, err
+			}
+
+			return nil, fmt.Errorf("%w: %w", ErrKeyResolution, err)
+		}
+
+		if key == nil {
+			return nil, fmt.Errorf("%w: the resolver returned no key for kid %q", ErrKeyResolution, keyID)
 		}
 
 		return key, nil
 	}
+}
+
+func matchAudience(got jwt.ClaimStrings, want string) error {
+	if len(got) == 0 {
+		return fmt.Errorf("%w: aud", jwt.ErrTokenRequiredClaimMissing)
+	}
+
+	if !slices.Contains(got, want) {
+		return jwt.ErrTokenInvalidAudience
+	}
+
+	return nil
 }
 
 // validateTokenType checks the typ header the spec fixes at JWT.
@@ -190,7 +230,7 @@ func validateTokenType(token *jwt.Token) error {
 }
 
 // validateRegisteredClaims checks the registered claims golang-jwt does not check itself.
-// iss, aud, exp, nbf, and iat are checked by the parser.
+// iss, exp, nbf, and iat are checked by the parser, and the aud match by verify.
 func validateRegisteredClaims(claims internaljwt.Claims) error {
 	if claims.Subject == "" {
 		return missingClaim("sub")

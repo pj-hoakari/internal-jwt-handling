@@ -42,6 +42,8 @@ var errNoSuchKey = errors.New("no such test key")
 // token never to be read.
 var errVerifierCalled = errors.New("the verifier was called")
 
+var errKeyStoreDown = errors.New("the test key store is unreachable")
+
 // stubVerifier stands in for a verifier no test expects to be reached.
 type stubVerifier struct{}
 
@@ -92,10 +94,16 @@ type staticKeys struct {
 func (s staticKeys) Key(_ context.Context, keyID string) (*ecdsa.PublicKey, error) {
 	key, ok := s.keys[keyID]
 	if !ok {
-		return nil, fmt.Errorf("%w: %q", errNoSuchKey, keyID)
+		return nil, fmt.Errorf("%w: %q: %w", internaljwt.ErrUnknownKeyID, keyID, errNoSuchKey)
 	}
 
 	return key, nil
+}
+
+type unreachableKeys struct{}
+
+func (unreachableKeys) Key(context.Context, string) (*ecdsa.PublicKey, error) {
+	return nil, errKeyStoreDown
 }
 
 // newTokenVerifier is the verifier of a service holding the JWKS a token was
@@ -114,7 +122,13 @@ func newTokenVerifier(t *testing.T, document internaljwt.JWKS) *verifier.Verifie
 		keys[jwk.KeyID] = key
 	}
 
-	tokenVerifier, err := verifier.New(testIssuerID, testAudience, staticKeys{keys: keys})
+	return newVerifierOn(t, staticKeys{keys: keys})
+}
+
+func newVerifierOn(t *testing.T, keys verifier.KeyResolver) *verifier.Verifier {
+	t.Helper()
+
+	tokenVerifier, err := verifier.New(testIssuerID, testAudience, keys)
 	if err != nil {
 		t.Fatalf("verifier.New: %v", err)
 	}
