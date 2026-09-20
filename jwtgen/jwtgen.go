@@ -31,6 +31,8 @@ var (
 	ErrTxnForbidden       = errors.New("txn is only valid for a service token: an external token conversion starts a new chain")
 )
 
+var ErrMissingSigningKey = errors.New("signing key is required")
+
 // Config describes the internal JWT to mint.
 type Config struct {
 	Issuer         string
@@ -81,13 +83,25 @@ type Generator struct {
 
 // NewGenerator creates a signing key named keyID. Blank falls back to DefaultKeyID.
 func NewGenerator(keyID string) (*Generator, error) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrGenerateKey, err)
+	}
+
+	return NewGeneratorWithKey(keyID, key)
+}
+
+func NewGeneratorWithKey(keyID string, key *ecdsa.PrivateKey) (*Generator, error) {
 	if keyID == "" {
 		keyID = DefaultKeyID
 	}
 
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrGenerateKey, err)
+	if key == nil {
+		return nil, ErrMissingSigningKey
+	}
+
+	if key.Curve != elliptic.P256() {
+		return nil, fmt.Errorf("%w: got %q", internaljwt.ErrUnsupportedCurve, internaljwt.CurveName(key.Curve))
 	}
 
 	return &Generator{keyID: keyID, key: key}, nil
@@ -131,6 +145,18 @@ func (g *Generator) Generate(config Config) (Output, error) {
 	}
 
 	return Output{Token: issued.Token, Claims: issued.Claims, JWKS: jwks}, nil
+}
+
+func (g *Generator) SignUnchecked(claims internaljwt.Claims) (string, error) {
+	token := jwt.NewWithClaims(jwt.SigningMethodES256, newUncheckedClaims(claims))
+	token.Header["kid"] = g.keyID
+
+	signed, err := token.SignedString(g.key)
+	if err != nil {
+		return "", fmt.Errorf("sign internal JWT: %w", err)
+	}
+
+	return signed, nil
 }
 
 // JWKS is the document that verifies every token the generator minted.
