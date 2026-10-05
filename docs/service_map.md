@@ -4,10 +4,10 @@
 位置づけ: サービス（デプロイ単位）視点の図。ドメイン（コンテキスト）視点は domain/context_map.md が正本
 内容の根拠: spec-base/README.md（通信規約・索引）と service/ 各仕様。図と本文が食い違う場合は各仕様が正
 
-図のService Gatewayは論理的な1サービス・1アプリ配備を表す。Composeは外部用とworkload用の2listener、Cloud Runは公開の1listenerを使う。
+図のService Gatewayは論理的な1サービスを表す。Composeは公開用と内部用の2listenerを持つ1配備、Cloud Runは公開用と内部用の2配備とする。
 外部クライアントとサービスAはいずれもGatewayの受信側RPCを呼び、Gatewayの生成クライアントが後段を呼ぶ。protoは同一契約を再利用し必要箇所だけ独自定義する。
-Cloud RunのGatewayはInvoker IAMを無効化してRPCごとにアプリ認証・認可を行い、後段のworkload認証とIAMを維持する。JWKSは匿名公開する。
-方式と切替は workload_auth.md に従う。
+Cloud Runの公開用GatewayはInvoker IAMを無効化してRPCごとに外部資格情報を認証・認可し、内部用Gatewayと後段はingressとInvoker IAMで到達を制限する。JWKSは匿名公開する。
+到達制御は service_transport.md に従う。
 
 前提（凡例に共通）
 

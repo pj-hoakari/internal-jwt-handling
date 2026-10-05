@@ -16,16 +16,15 @@
 - `scope` は `tenant_access`、`event_access`、`registration` で「何ができるか」を表す。`service` のメソッド可否は辺ポリシーが表す。
 - `token_use` の値（`tenant_access` 等）を scope 文字列として重複表現しない。
 - `tenant_access`、`event_access`、`registration` の権限判定は scope、資格情報の種別判定は `token_use` が担う。
-- `token_use = service` の認可は、呼び出し元ワークロードと宛先メソッドに対する Service Gateway の辺ポリシーが担う。
+- `token_use = service` の認可は、呼び出し元サービスと宛先メソッドに対する Service Gateway の辺ポリシーが担う。
 - 外部トークンの送信者拘束（DPoP）は Service Gateway を境界として外部トークンの層で完結する。内部 JWT は `cnf` 等の束縛クレームを持たず、送信者拘束を持ち込まない。
 
-## ワークロード認証との分離
+## 到達制御との分離
 
-ワークロード資格情報の取得・検証・運搬は workload_auth.md に従う。
-SPIRE／Google認証の選択は内部JWTの構造・署名方式・120秒の有効期間を変更しない。
-Gatewayは1つのアプリ配備単位とし、全インスタンスが共通issuerと論理ID体系で発行する。JWKSは認証不要で公開し、全インスタンスの検証に必要な同じ公開鍵集合を配布する。
-バックエンドで認証するtransportの主体はGatewayであり、内部JWTのsubに入る前段サービスとは別に検証する。
-Gateway入口の「提示者＝文脈aud」は、検証済み論理サービスIDを使って行う。
+アプリはワークロード資格情報を扱わず、サービス間経路の到達制御は service_transport.md に従う。
+Gatewayの全配備・全インスタンスが共通issuerと論理ID体系で発行する。JWKSは認証不要で公開し、全インスタンスの検証に必要な同じ公開鍵集合を配布する。
+バックエンドへ到達できるのは到達制御によりGatewayに限られ、内部JWTのsubに入る前段サービスとは別である。
+Gateway内部用受信口は、文脈内部JWTの `aud` を呼び出し元サービスとして辺ポリシーを照合する。
 
 ## 署名
 
@@ -64,7 +63,7 @@ Gateway入口の「提示者＝文脈aud」は、検証済み論理サービスI
 | claim | 型 | 内容 |
 |---|---|---|
 | `iss` | string | 発行者識別子 |
-| `sub` | string | 主体。ユーザー系は user_id、サービス系は呼び出し元サービスの識別子（マシン起点では検証済みワークロード identity のサービス識別子） |
+| `sub` | string | 主体。ユーザー系は user_id、サービス系は呼び出し元サービスの識別子（新規マシン起点では申告された論理サービスID） |
 | `aud` | string | 宛先の論理識別子（宛先サービス単位。1 トークン 1 audience） |
 | `iat` | NumericDate | 発行時刻 |
 | `nbf` | NumericDate | 有効化時刻 |
