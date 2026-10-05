@@ -9,51 +9,48 @@
 - 同一契約のRPCは各サービスのprotoを再利用し、Gatewayの生成サーバーハンドラーから後段の生成Connectクライアントへ型付き委譲する。公開用の型・版管理が異なるRPCは独自protoと明示的な対応・変換を持つ
 - 再利用RPCは入出力の意味を維持するが、再シリアライズ後のバイト一致は保証しない。業務処理と永続化は後段の責務とする
 - 認証経路では`authorization`メタデータの外部トークンを検証し、内部JWTへ差し替えて宛先サービスを呼び出す
-- 明示した未認証経路では内部JWTを発行せず、authorizationを省略する。ただしGatewayから宛先へのワークロード認証は必須とする
+- 明示した未認証経路では内部JWTを発行せず、authorizationを省略する。Gatewayから宛先への転送は到達制御を通る経路で行う
 - ストリーミング RPC はストリーム開始時に検証する
 - PubSub の publish／購読と Firestore 変更通知は経由しない（ブローカー仲介）
 - マイクロサービスへ Service Gateway を迂回して到達できないことをインフラ層（ネットワーク構成）で保証する
-  例外は2つある。Edge Bridge Service は完全に独立した位置に置き、本 Gateway の後ろに配置しない（Edge Bridge Service。認証・認可は `event_access` の直接検証と受理 client の限定、および Firestore のアクセス制御による）。Flow Control と Line Control は Observation からの直接呼び出しのみを受け、本 Gateway を経由しない（Flow Control、Line Control。到達制御はインフラ層とワークロード資格情報の直接検証で保証する）
+  例外は2つある。Edge Bridge Service は完全に独立した位置に置き、本 Gateway の後ろに配置しない（Edge Bridge Service。認証・認可は `event_access` の直接検証と受理 client の限定、および Firestore のアクセス制御による）。Flow Control と Line Control は Observation からの直接呼び出しのみを受け、本 Gateway を経由しない（Flow Control、Line Control。到達制御はインフラ層で保証する）
   例外を認める基準は「Service Gateway が認証・認可以外の処理をペイロードに加えず、呼び出し元が単一のサービス間経路」に限る
 
 ## アプリ内実装と入口の配備
 
-Gatewayは1つのアプリ配備単位とし、Composeでは1コンテナ、Cloud Runでは1サービスとして配備する。Cloud Runの最大インスタンス数を1に固定する意味ではない。
-アプリ自身のTLS・HTTP middleware・RPC認可・内部JWT処理・生成Connectサーバー／クライアントで実装し、Envoy等の通信サイドカーを前提にしない。
-認証が必要な業務RPCは本文デコード前に認証し、Connect Interceptor等へ検証済みidentityを渡す。
-サーバー側をGateway受信側（外部向け）、クライアント側をバックエンド送信側（内部向け）と呼ぶ。サービスAもGateway受信側を呼ぶため、方向の名称と呼び出し元の認証を混同しない。
+Gatewayは同じイメージを、Composeでは1コンテナ・2listener、Cloud Runでは公開用と内部用の2サービスとして配備する。Cloud Runの最大インスタンス数を1に固定する意味ではない。
+アプリ自身のHTTP middleware・RPC認可・内部JWT処理・生成Connectサーバー／クライアントで実装し、Envoy等の通信サイドカーを前提にしない。
+認証が必要な業務RPCは本文デコード前に認証し、Connect Interceptor等へ検証済みの呼び出し元を渡す。
+サーバー側をGateway受信側（外部向け）、クライアント側をバックエンド送信側（内部向け）と呼ぶ。サービスAもGateway受信側を呼ぶため、方向の名称と呼び出し元の識別を混同しない。
 
-設定は workload_auth.md に従う。
-Composeは `TOLO_WORKLOAD_AUTH_MODE=spire` と `TOLO_GATEWAY_LISTENER_MODE=split` で、外部用とSPIFFE mTLS必須のworkload用の2listenerを起動する。
-外部用は外部IdP／DPoP・明示匿名RPC・Guest HTTP・公開JWKSを扱う。workload用はサービス間RPCを扱い、外部資格情報へのフォールバックは設けない。
-同じServiceにサービス専用メソッドが含まれる場合も、外部用listenerではその実行を拒否する。
-workloadポートはホストへ公開せず必要なコンテナネットワークから接続するが、非公開ポートを認証根拠にはしない。
-
-Cloud Runは `TOLO_WORKLOAD_AUTH_MODE=cloud_run` と `TOLO_GATEWAY_LISTENER_MODE=shared` で、`0.0.0.0:$PORT` に1つのHTTPサーバーを起動する。必要なHTTP/2経路はh2cとする。
-Invoker IAMチェックを無効化し、全経路を公開入口から到達可能にする。サービス専用RPCもパスが非公開という意味ではなく、アプリが認証済みサービスにだけ実行を許す。
-Gatewayの実行SA・SPIFFE IDは環境内の論理Gatewayに対応づける。通常バックエンドはGatewayのprincipalだけを許可し、Cloud RunではInvoker IAMとアプリ検証を維持する。Observation→Flow／Line等の直接例外は別に設定する。
+到達制御と設定は service_transport.md に従う。
+Composeは `TOLO_GATEWAY_LISTENER_MODE=split` で、公開用と内部用の2listenerを起動する。内部用のポートはホストへ公開しない。
+Cloud Runは公開用を `TOLO_GATEWAY_LISTENER_MODE=public`、内部用を `TOLO_GATEWAY_LISTENER_MODE=internal` で配備し、それぞれ `0.0.0.0:$PORT` に1つのHTTPサーバーを起動する。必要なHTTP/2経路はh2cとする。
+公開用はInvoker IAMを無効にし、外部IdP／DPoP・明示匿名RPC・Guest HTTP・公開JWKSを扱う。内部用はingressを内部に限ってサービスAの実行SAにだけInvokerを付与し、サービス間RPCを扱う。
+同じServiceにサービス専用メソッドが含まれる場合も、公開用ではその実行を拒否する。内部用では外部資格情報によるRPCと匿名RPCを実行しない。
+通常バックエンドはGateway公開用・内部用の実行SAだけをInvokerとして許可する。Observation→Flow／Line等の直接例外は別に設定する。
 全Gatewayインスタンスが同じ内部JWT issuerと論理ID体系を用い、共通JWKSへ検証に必要な鍵集合を公開する。
 
 Cloud Run本番は外部Application Load BalancerとCloud Armorを入口とし、インターネットから既定URL等へ直接到達してArmorを迂回できないようingress等を設定する。
-外部利用者・サービスA・JWKS取得者は公開LB URLを基準とする。内部直通を追加する場合はArmor適用外の経路を別途定義し、同じアプリ認可を必須にする。
+外部利用者・JWKS取得者は公開LB URLを基準とする。サービスAは公開LB URLではなく内部用GatewayのURLを呼ぶ。
 `internal-and-cloud-load-balancing` は内部ネットワーク経路も許すため、設定だけで全通信のArmor通過が保証されるとは扱わない。既定URL・別domain mapping・内部直通を含め到達経路を検査する。
-宛先URLとGoogle audは別設定とし、LB導入だけでaudを暗黙に変更しない。DPoPは信頼した転送情報から確定する実際の公開URLで検証し、任意のHost／転送ヘッダを信頼しない。
+DPoPは信頼した転送情報から確定する実際の公開URLで検証し、任意のHost／転送ヘッダを信頼しない。
 
-## shared入口の業務RPC受理規則
+## 業務RPCの受理規則
 
 最上位ルーターでRPC・Guest・JWKS・限定した監視を識別し、未知経路を拒否する。公開JWKSは以下の業務RPC認証処理から外す。
-完全修飾RPCごとに受理する主体種別を宣言し、同じパスへ別認証用ハンドラーを重複登録しない。
+完全修飾RPCごとに受理する受信口と主体種別を宣言し、同じパスへ別認証用ハンドラーを重複登録しない。
 
-| 入力 | 処理 |
-|---|---|
-| workload-authorizationあり | 完全なGoogle tokenを検証し、許可SAから論理サービスAを得る。その後にA宛の文脈内部JWTと許可辺を確認する |
-| workload資格情報なし、外部資格情報あり | IdP token・必要なDPoPを検証し、client・scope・RPC公開区分を確認する（client 識別による公開区分の強制は未確定事項）。内部JWTやGoogle tokenをIdP tokenとして代用しない |
-| 資格情報なし | 明示匿名RPCのみを受理する。サービス専用RPC・認証必須RPCを実行しない |
+| 受信口 | 入力 | 処理 |
+|---|---|---|
+| 公開用 | 外部資格情報あり | IdP token・必要なDPoPを検証し、client・scope・RPC公開区分を確認する（client 識別による公開区分の強制は未確定事項）。内部JWTをIdP tokenとして代用しない |
+| 公開用 | 資格情報なし | 明示匿名RPCのみを受理する。サービス専用RPC・認証必須RPCを実行しない |
+| 内部用 | 文脈内部JWTまたは `tolo-caller-service` | 呼び出し元サービスAを決め、許可辺を確認する（後述「サービス間経路の検証と再発行」） |
 
-空・不正・重複・混在した認証情報は拒否し、失敗した方式から外部認証や匿名へフォールバックしない。
+空・不正・重複・混在した認証情報は拒否し、失敗した方式から別の方式や匿名へフォールバックしない。
+公開用受信口の `tolo-caller-service` と、内部用受信口の外部資格情報は拒否する。
 サービス間のAuthorizationは文脈内部JWT用であり、省略は当該サービスとRPCの辺が新規マシン起点を許す場合だけ認める。無効な文脈JWTを文脈なしとして再解釈しない。
-サービスAとして処理する業務RPCのワークロード認証は維持する。Gatewayの公開・匿名JWKSを理由にAのidentityを省略しない。
-認証済み接続でも各新規RPCで現在の辺許可を検査する。実行中RPCと許可撤回の扱いは共通認証仕様に従う。
+各新規RPCで現在の辺許可を検査する。
 
 ## 公開 proto と宛先サービスのマッピング
 
@@ -118,7 +115,7 @@ protoの採用版を固定し、更新時は機械的な互換性と、追加フ
 | ユーザー（イベント文脈） | `event_access`（IdP 発行） | 検証＋内部 JWT へ変換。エッジ端末（観測ページ）もこの経路 |
 | 仮テナント作成 | なし（未認証） | パススルー。StartTenantRegistrationだけを許可し、匿名作成の保護を適用 |
 | 仮テナントの所有権取得 | 所有権取得専用の最小トークン（IdP 発行） | 検証＋内部 JWT へ変換 |
-| サービス間の同期 RPC | ワークロード資格情報＋文脈トークン（新規マシン起点だけ省略可。後述「サービス間経路の検証と再発行」） | 辺ポリシー照合＋token_use=service の内部 JWT を再発行 |
+| サービス間の同期 RPC | 文脈トークン（新規マシン起点だけ省略し、呼び出し元を申告する。後述「サービス間経路の検証と再発行」） | 辺ポリシー照合＋token_use=service の内部 JWT を再発行 |
 | ゲスト | なし（未認証） | パススルー（Guest Service のゲスト向け HTTP） |
 
 ユーザー経路の外部トークンが鍵束縛（`cnf`）を持つ場合、検証には DPoP proof の検証を含む（後述「外部トークンの検証」）。
@@ -142,23 +139,21 @@ protoの採用版を固定し、更新時は機械的な互換性と、追加フ
 ## サービス間経路の検証と再発行
 
 サービス間の同期 RPC も Service Gateway を経由する。
-この経路ではワークロード資格情報を必ず検証し、新規マシン起点を除いて文脈トークンも検証して、`token_use=service` の内部 JWT をホップごとに再発行する。
-役割分離の原則: 呼び出し元の識別はワークロード資格情報が担い、内部 JWT は処理文脈の運搬と宛先束縛に使う（トークンの提示はワークロードの認証にならない）。呼び出し可否は辺ポリシーが決める。
+この経路は内部用受信口で受け、新規マシン起点を除いて文脈トークンを検証して、`token_use=service` の内部 JWT をホップごとに再発行する。
+役割分離の原則: 呼び出し元の到達制御はプラットフォーム（Cloud Run の ingress と Invoker IAM、Compose のネットワーク構成）が担い、内部 JWT は処理文脈の運搬と宛先束縛に使う。呼び出し可否は辺ポリシーが決める。
 
-### ワークロード資格情報の検証
+### 呼び出し元の識別
 
-- 取得・検証・運搬・環境変数の契約は workload_auth.md を正本とする
-- `TOLO_WORKLOAD_AUTH_MODE=spire|cloud_run` を起動時に検証し、受信と送信の方式を一体で選択する。未設定・不正値では起動しない。認証失敗による別方式へのフォールバックは行わない
-- SPIREモードではアプリが相手のX.509-SVIDと鍵所持をTLSで検証する。Cloud RunモードではIAMに加えてworkload-authorizationの完全なGoogle署名IDトークンをアプリで検証する
-- 検証済みSPIFFE ID、またはGoogle issuer＋SA unique IDを環境別の完全一致対応表で論理サービスIDに変換し、文脈検証と辺認可へ渡す。未登録principalは拒否する
-- IdPはサービスidentityに関与しない。内部JWTとワークロード資格情報の検証パスを分離し、文脈JWTの所持をワークロード認証とみなさない
-- 文脈JWTはauthorization、Cloud Runの完全なGoogle tokenはworkload-authorization、IAM用はX-Serverless-Authorizationで運ぶ。SPIREモードはTLSで認証し、Google用の2ヘッダを使わない
+- 到達制御と識別の契約は service_transport.md を正本とする
+- 文脈トークンを提示した要求では、その aud を呼び出し元サービスとする
+- 新規マシン起点の要求では、`tolo-caller-service` ヘッダで申告された論理サービスIDを呼び出し元とする。文脈トークンと申告ヘッダの両方がある要求、どちらもない要求、未登録の論理サービスIDは拒否する
+- アプリはワークロード資格情報を検証しない。Cloud Run の `X-Serverless-Authorization` は IAM 用であり、呼び出し元の識別に使わない
 
 ### 文脈トークンの検証
 
 - 文脈トークンは、呼び出し元サービスが処理中のリクエストで受領した内部 JWT である。ユーザー起点の文脈に加え、マシン起点チェーンの `token_use=service` も次ホップの文脈として提示できる
 - Service Gateway の署名鍵で検証し、提示時点で有効（exp 内）であることを確認する
-- 提示者 = aud の突合: 文脈トークンを提示できるのは、その aud に指名されたワークロードだけである。ワークロード資格情報で識別した呼び出し元と aud が一致しなければ拒否する
+- 文脈トークンを提示できるのは、その aud に指名されたサービスだけである。Gateway は aud を呼び出し元として辺ポリシーを照合するため、他サービス宛の文脈トークンでは当該サービスに許された辺しか通らない
 - ユーザー起点は、入口の `tenant_access`／`event_access`／`registration`、または `origin_sub` を持つ `token_use=service` とする。ユーザー起点の `service` は `scope`、`src_jti`、`origin_sub`、`txn` を必須とする
 - マシン起点チェーンは `token_use=service` とし、`txn` を必須とする。`scope`、`src_jti`、`origin_sub`、`tenant_id`、`event_id` を持つ場合は拒否する
 - 新規マシン起点は文脈トークンを提示しない。文脈トークンを省略できるのはこの分岐だけである
@@ -166,7 +161,7 @@ protoの採用版を固定し、更新時は機械的な互換性と、追加フ
 ### 辺ポリシーの照合
 
 - 辺ポリシーは、許可するサービス間呼び出しの静的な一覧（重要構成としてコードと同期管理し、実装用の宣言的設定と CI で突合する）
-- 辺の形式: ユーザー起点は「(呼び出し元ワークロード, 文脈トークンの token_use と aud) → 宛先メソッド」、マシン起点は「呼び出し元ワークロード → 宛先メソッド」とする。マシン起点チェーンで提示する `service` 文脈は処理チェーンの継続を示すが、呼び出し権限は付与しない
+- 辺の形式: ユーザー起点は「(呼び出し元サービス, 文脈トークンの token_use) → 宛先メソッド」、マシン起点は「呼び出し元サービス → 宛先メソッド」とする。マシン起点チェーンで提示する `service` 文脈は処理チェーンの継続を示すが、呼び出し権限は付与しない
 - 辺が許可一覧になければ permission_denied。token_use=service の発行根拠はこの辺ポリシーの照合であり、ユーザーの権限からは導出しない
 
 ### 再発行する内部 JWT
@@ -192,7 +187,7 @@ scope は外部トークンの値を転記し、拡大も暗黙の縮小もし�
 | claim | 内容 |
 |---|---|
 | iss | Service Gateway の発行者識別子（IdP の iss と別値にし、取り違えを防ぐ） |
-| sub | ユーザー系は user_id、サービス系は呼び出し元サービスの識別子（マシン起点では検証済みワークロード identity のサービス識別子） |
+| sub | ユーザー系は user_id、サービス系は呼び出し元サービスの識別子（新規マシン起点では申告された論理サービスID） |
 | aud | 宛先マイクロサービスの論理識別子（宛先サービス単位。1 token 1 audience を踏襲し、サービス間のトークン転用を防ぐ） |
 | token_use | 下表の4種別 |
 | scope | 外部トークンの scope の転記（起点別。マシン起点の service では持たない） |
@@ -241,14 +236,14 @@ scope は外部トークンの値を転記し、拡大も暗黙の縮小もし�
 
 ## 公開JWKSとHTTP例外
 
-JWKSはworkload資格情報・内部JWT・IdP tokenを要求せず、全利用者へ同じ公開鍵集合を返す。不要な認証ヘッダで内容を変えたりidentityを生成したりしない。
+JWKSは内部JWT・IdP tokenを要求せず、全利用者へ同じ公開鍵集合を返す。不要な認証ヘッダで内容を変えたりidentityを生成したりしない。
 通常のHTTP構文・サイズ制限は適用する。署名用のES256公開鍵と検証情報だけを含め、秘密鍵・共通鍵・テナントや運用者の情報は含めない。
 取得側は設定済みissuerとHTTPSのJWKS URLを使い、token内の任意jku等を取得先にしない。署名・issuer・aud・期限の検証は維持する。
 JWKSのURLと必要ならHEAD対応、ETag・HTTPキャッシュの具体値は実装フェーズで確定する。共有キャッシュ追加時は取得側と合わせた鮮度上限を定義し、既存の通常ローテーション待機時間を超えないよう整合させる。
 全インスタンスは同じ鍵集合を返し、新鍵の全配布経路への反映を確認してから署名を開始する。署名用秘密鍵の保管権限は配布機能から分離する。
 
-Guest HTTPは既知のパス・method・固定Guest宛先に限定し、未知RPCをGuestへ転送しない。匿名要求でもGateway→Guestのworkload認証は必須とする。
-IdPのDiscovery・JWKS・検証要求、Google metadata／公開鍵、SPIFFE Workload API、CORS・必要な監視はConnect業務RPC外の限定例外とする。
+Guest HTTPは既知のパス・method・固定Guest宛先に限定し、未知RPCをGuestへ転送しない。匿名要求でもGateway→Guestの転送は到達制御を通る経路で行う。
+IdPのDiscovery・JWKS・検証要求、Google metadata、CORS・必要な監視はConnect業務RPC外の限定例外とする。
 例外ごとに受理規則を設け、任意HTTP転送を追加しない。CORS応答の許可を業務RPCの認証成功として扱わない。
 
 ## 型付き委譲の通信契約
@@ -256,7 +251,7 @@ IdPのDiscovery・JWKS・検証要求、Google metadata／公開鍵、SPIFFE Wor
 再利用RPCは意味上の入出力、独自RPCは定義した変換を保証する。業務処理やDBをGatewayへ移さない。
 受信deadline・cancelを後段へ伝え、残存時間を増やさない。公開可能なConnectエラー・許可metadata・必要なheaders／trailers・streaming終了状態を伝搬する。
 streamingの全件bufferingをせず、backpressureと切断を扱う。非冪等更新を自動再試行しない。
-認証ヘッダとidentityを外部から丸ごと転送せず、現在の要求と宛先に応じた内部JWT・workload資格情報を生成クライアントへ設定する。
+認証ヘッダとidentityを外部から丸ごと転送せず、現在の要求と宛先に応じた内部JWTと、Cloud Runでは宛先用Google IDトークンを生成クライアントへ設定する。
 接続プールは共有できるが、利用者の認証文脈は要求間で共有しない。後段クライアントはBへ直接接続する設定とし、通常サービスのGateway経由クライアント設定を誤って使わない。
 
 ## メソッド認可表
@@ -292,7 +287,7 @@ streamingの全件bufferingをせず、backpressureと切断を扱う。非冪�
 
 Tenant.GetEvent（テナント文脈必須）、Tenant.GetObservationSettings、Graph 供給系（GetCurrentRevision／GetObservationPointMappings／GetGatePoints／GetDisplayNames／GetQrLocations）、Observation の GetGuestSnapshot、Operation の RequestProposalDelivery／RecordFeedbackValues／ListStaffMessages（Guest Service の復旧時）、Notification.SendPush、Reference Aggregation の SubmitAnonymizedFeedback／GetReferenceValues、Observation.ReportMeasurements（Guest Service 由来）
 
-Flow.Optimize と Line.GuideQueues は Service Gateway を経由しないため本表にない（ワークロード資格情報の直接検証。Flow Control、Line Control）
+Flow.Optimize と Line.GuideQueues は Service Gateway を経由しないため本表にない（到達制御で Observation に限る直接呼び出し。Flow Control、Line Control）
 
 ### token_use = registration を要求
 
@@ -308,7 +303,7 @@ StartTenantRegistrationには、送信元単位のレート制限、ボット対
 
 ## サービス側の検証規約
 
-- workload_auth.md に従い、transportの呼び出し元が許可されたGatewayであることを確認する。匿名の外部要求でもこの確認は省略しない。Flow／Lineは同仕様に定めるObservationの直接認証を行う
+- Gateway 以外から到達できないことは service_transport.md のインフラ構成で保証し、アプリはワークロード資格情報を検証しない。Flow／Line は同仕様に定める Observation からの到達制御に従う
 - 内部JWTが必須の経路ではService GatewayのJWKSで署名を検証し、iss・aud・exp・nbfを確認する（clock skew 許容 ±30 秒）
   検証に失敗した内部JWT（JWKSを再取得しても見つからない未知kidを含む）は unauthenticated で拒否する
   検証鍵を解決できない場合（JWKSの取得失敗、その再試行を控えている間）は、内部JWTの正否を判定できないため unavailable を返し、unauthenticated と区別する
@@ -337,8 +332,8 @@ StartTenantRegistrationには、送信元単位のレート制限、ボット対
 ## 監査ログ
 
 - 記録項目: timestamp、trace_id、span_id、メソッド（サービス＋RPC）、client_id、sub、token_use、txn、発行した内部 JWT の jti、result、failure_reason、source_ip。`src_jti` と `origin_sub` はユーザー起点の場合だけ記録する
-- サービス間再発行では、呼び出し元ワークロード、照合した辺、origin_sub の有無も記録する
-- 外部トークン本体・内部JWT本体・Googleワークロードトークン・SVID秘密鍵をログへ出してはならない
+- サービス間再発行では、呼び出し元サービスとその識別根拠（文脈トークンの aud または申告ヘッダ）、照合した辺、origin_sub の有無も記録する
+- 外部トークン本体・内部JWT本体・Google IDトークンをログへ出してはならない
 - ホップをまたぐ相関は W3C Trace Context で行う。`traceparent`（gRPC／Connect ではリクエストメタデータ）で宛先サービスへ伝搬し、trace_id・span_id をサービス側ログと突き合わせ可能にする。独自の相関識別子とそのためのヘッダは設けない
 - 外部クライアントから受信した trace context は引き継がず、要求ごとに新しいトレースを開始する（外部から与えられた値を監査の相関キーにしないため）
 - trace_id は、トレースのエクスポート設定やサンプリングの結果によらず、要求ごとに必ず生成して伝搬する
