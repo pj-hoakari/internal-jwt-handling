@@ -1,6 +1,5 @@
 # Service Gateway 入出力仕様
 
-作成日: 2026-07-03
 位置づけ: デプロイ単位。サービスprotoの再利用と必要な独自protoを併用するConnect-RPCサーバー兼クライアント（同期 RPC の原則経由点。例外は Auth、Edge Bridge Service、Observation → Flow／Line）
 役割: 外部資格情報の検証と内部 JWT への変換（トークン変換点）、および宛先サービスへの転送
 
