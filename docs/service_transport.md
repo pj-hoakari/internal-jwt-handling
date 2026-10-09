@@ -69,7 +69,7 @@ Gatewayは内部用受信口で呼び出し元を決めた後、辺ポリシー�
 バックエンドBは内部JWTの署名・issuer・B宛aud・期限・RPC認可を検証する。内部JWTのsubはAになり得る。
 
 匿名のStartTenantRegistrationとGuestの公開HTTPでも、Gatewayから後段への転送は到達制御を通る経路で行い、Authorizationの内部JWTだけを省略する。
-各ホップで現在の送信者が宛先に応じた内部JWTと、Cloud Runでは宛先用Google IDトークンを新たに設定する。受信した資格情報を後段へ転送しない。
+各ホップでは、その時点の送信者が宛先に応じた内部JWTを新たに設定し、Cloud Runでは宛先用Google IDトークンも新たに設定する。受信した資格情報を後段へ転送しない。
 
 ## 実装位置
 

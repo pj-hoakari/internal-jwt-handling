@@ -2,20 +2,20 @@
 
 作成日: 2026-07-02
 位置づけ: サービス（デプロイ単位）視点の図。ドメイン（コンテキスト）視点は domain/context_map.md が正本
-内容の根拠: spec-base/README.md（通信規約・索引）と service/ 各仕様。図と本文が食い違う場合は各仕様が正
+内容の根拠: spec-base/README.md（通信規約・索引）と service/ 各仕様。図と本文が食い違う場合は各仕様を正とする
 
 図のService Gatewayは論理的な1サービスを表す。Composeは公開用と内部用の2listenerを持つ1配備、Cloud Runは公開用と内部用の2配備とする。
-外部クライアントとサービスAはいずれもGatewayの受信側RPCを呼び、Gatewayの生成クライアントが後段を呼ぶ。protoは同一契約を再利用し必要箇所だけ独自定義する。
+外部クライアントとサービスAはいずれもGatewayの受信側RPCを呼び、Gatewayの生成クライアントが後段を呼ぶ。protoは同一契約を再利用し、必要な箇所だけを独自に定義する。
 Cloud Runの公開用GatewayはInvoker IAMを無効化してRPCごとに外部資格情報を認証・認可し、内部用Gatewayと後段はingressとInvoker IAMで到達を制限する。JWKSは匿名公開する。
 到達制御は service_transport.md に従う。
 
 前提（凡例に共通）
 
-- Auth、Edge Bridge Service、および Observation → Flow／Line（直接呼び出し）以外の同期 RPC はすべて Service Gateway を経由する。図では見やすさのためサービス間の GW を省略
+- Auth、Edge Bridge Service、および Observation → Flow／Line（直接呼び出し）以外の同期 RPC はすべて Service Gateway を経由する。図では見やすさのため、サービス間の GW を省略する
 - Edge Bridge Service は WebRTC のシグナリングのみを担い、Service Gateway の後ろに置かない。映像はページ間で直接やりとりする
-- PubSub は情報更新 push の3トピックのみ。at-least-once・イベント単位の順序キー・受信側冪等
+- PubSub は情報更新 push の3トピックだけに使う。at-least-once 配信、イベント単位の順序キー、受信側の冪等処理を前提とする
 - 実線＝同期RPC（Connect。直接例外のプロトコルは各仕様に従う）または限定HTTP例外、太線（==>）＝PubSub、点線＝リスナー・参照系・外部プッシュ
-- BFF は図では省略（管理 UI の Auth・GW への接続は BFF 経由。外部トークンは BFF のサーバ側に保持し、ブラウザへ渡さない）
+- BFF は図では省略する（管理 UI の Auth・GW への接続は BFF 経由。外部トークンは BFF のサーバ側に保持し、ブラウザへ渡さない）
   スタッフアプリはログインも Token Exchange も直接 Auth と行う（public client の直接交換。トークンは DPoP で鍵束縛）。API 呼び出しはアプリ→GW のまま。BFF は現場運用の認証経路上にない
 
 ## 1. サービス間の関係全体図
@@ -106,11 +106,11 @@ flowchart LR
 - IdP 発行トークンは Service Gateway が検証し、内部 JWT へ変換して各サービスへ転送する。JWKS と introspection の endpoint は OIDC Discovery と Authorization Server Metadata から解決する（service_gateway_spec.md）
   各サービスは Service Gateway の JWKS で内部 JWT をローカル検証する（図では省略）
 - introspection は管理系書き込み6 RPCの active／revoked 確認に限定し、同じ6 RPCの現在権限は Tenant Management が同一 DB で確認する
-- Flow／Line の呼び出し元は観測のみで、この呼び出しは Service Gateway を経由しない（各仕様参照）。Realtime・Notification は Operation の支援機構（独立コンテキストではない）
+- Flow／Line の呼び出し元は観測のみで、この呼び出しは Service Gateway を経由しない（各仕様参照）。Realtime・Notification は Operation の支援機構である（独立コンテキストではない）
 - Firestore の読み取り（Realtime の変更検知、WebRTC シグナリング）は Firebase Auth カスタムトークンによるアクセス制御を伴う（Realtime、Edge Bridge Service）
 - 関係参照（RelationAdminService）はTenant Managementが実装する。ClaimTenantOwnershipのオーナー所属作成はサービス内部で完結し、サービス間RPCを経ない
-- ゲート開閉（OperateGate）・観測点設定変更（UpdateObservationPointConfig）はスタッフアプリ→Observation の直接呼び出し。Operation→Observation の同期 RPC はない
-- Reference Aggregation はどのテナント保護境界にも属さず、入出力に テナント識別子を持たない
+- ゲート開閉（OperateGate）・観測点設定変更（UpdateObservationPointConfig）はスタッフアプリから Observation を直接呼び出す。Operation→Observation の同期 RPC はない
+- Reference Aggregation はどのテナント保護境界にも属さず、入出力にテナント識別子を持たない
 
 ## 2. やり取りの図（シーケンス）
 
@@ -160,7 +160,7 @@ sequenceDiagram
 
 ### 2.2 ゲスト向けメッセージとゲストアクセス
 
-スタッフの手動配信がゲストに届くまでと、ゲストのアクセス時応答（自 DB のみで完結）
+スタッフの手動配信がゲストに届くまでと、ゲストのアクセス時の応答（自 DB だけで完結する）
 
 ```mermaid
 sequenceDiagram
