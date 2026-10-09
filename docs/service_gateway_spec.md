@@ -1,6 +1,5 @@
 # Service Gateway 入出力仕様
 
-作成日: 2026-07-03
 位置づけ: デプロイ単位。サービスprotoの再利用と必要な独自protoを併用するConnect-RPCサーバー兼クライアント（同期 RPC の原則経由点。例外は Auth、Edge Bridge Service、Observation → Flow／Line）
 役割: 外部資格情報の検証と内部 JWT への変換（トークン変換点）、および宛先サービスへの転送
 
@@ -14,7 +13,7 @@
 - PubSub の publish／購読と Firestore 変更通知は経由しない（ブローカー仲介）
 - マイクロサービスへ Service Gateway を迂回して到達できないことをインフラ層（ネットワーク構成）で保証する
   例外は2つある。Edge Bridge Service は完全に独立した位置に置き、本 Gateway の後ろに配置しない（Edge Bridge Service。認証・認可は `event_access` の直接検証と受理 client の限定、および Firestore のアクセス制御による）。Flow Control と Line Control は Observation からの直接呼び出しのみを受け、本 Gateway を経由しない（Flow Control、Line Control。到達制御はインフラ層で保証する）
-  例外を認める基準は「Service Gateway が認証・認可以外の処理をペイロードに加えず、呼び出し元が単一のサービス間経路」に限る
+  例外を認めるのは「Service Gateway が認証・認可以外の処理をペイロードに加えず、呼び出し元が単一のサービス間経路」という基準を満たす場合に限る
 
 ## アプリ内実装と入口の配備
 
@@ -64,12 +63,12 @@ Guest HTTPはproto再利用の対象外で、限定HTTP例外として扱う。
 表の「全RPC」は列挙した現行メソッドだけを意味し、将来の追加メソッドを自動公開しない。未登録RPC・パス重複・任意宛先・Gateway自身への誤転送は拒否する。
 protoの採用版を固定し、更新時は機械的な互換性と、追加フィールド等の外部公開範囲を確認する。
 内部専用の型を外部利用者へ返す用途ではそのまま再利用せず、公開用の型と明示変換を設ける。
-表の「公開区分」は Service Gateway がどのクライアントへ公開するかを示す
+表の「公開区分」は Service Gateway がどのクライアントへ公開するかを示す。
 
 - 公開: Web（BFF 経由）・スタッフアプリ・エッジ端末・ゲスト等のクライアントが呼べる
 - 内部オンリー: サービス間呼び出し専用。Service Gateway は token_use=service（後述「サービス間経路の検証と再発行」で発行）のみ許可し、外部利用者には実行を許可しない（違反は permission_denied）。Cloud Runの公開入口からパスへ到達できることとは区別する
 
-各 RPC の認可の正本は各サービス仕様（本表は導出）
+各 RPC の認可の正本は各サービス仕様であり、本表はそこから導出したものである。
 
 | 宛先サービス | proto service | RPC | 公開区分 |
 |---|---|---|---|
@@ -160,9 +159,9 @@ protoの採用版を固定し、更新時は機械的な互換性と、追加フ
 
 ### 辺ポリシーの照合
 
-- 辺ポリシーは、許可するサービス間呼び出しの静的な一覧（重要構成としてコードと同期管理し、実装用の宣言的設定と CI で突合する）
+- 辺ポリシーは、許可するサービス間呼び出しの静的な一覧である（重要構成としてコードと同期管理し、実装用の宣言的設定と CI で突合する）
 - 辺の形式: ユーザー起点は「(呼び出し元サービス, 文脈トークンの token_use) → 宛先メソッド」、マシン起点は「呼び出し元サービス → 宛先メソッド」とする。マシン起点チェーンで提示する `service` 文脈は処理チェーンの継続を示すが、呼び出し権限は付与しない
-- 辺が許可一覧になければ permission_denied。token_use=service の発行根拠はこの辺ポリシーの照合であり、ユーザーの権限からは導出しない
+- 辺が許可一覧になければ permission_denied を返す。token_use=service の発行根拠はこの辺ポリシーの照合であり、ユーザーの権限からは導出しない
 
 ### 再発行する内部 JWT
 
@@ -173,12 +172,12 @@ protoの採用版を固定し、更新時は機械的な互換性と、追加フ
 - 新規マシン起点では UUIDv7 の `txn` を生成する。`scope`、`src_jti`、`origin_sub`、`tenant_id`、`event_id` は付与しない
 - `txn` は監査とトレースの相関にのみ用い、認可、冪等性、業務識別子には用いない
 - クレームの役割は2つに分かれる。`tenant_id`／`event_id` は保護境界の強制に用いてよい（どのデータ区画かを表すため）。`origin_sub`／`txn` は監査専用であり、認可判定に使ってはならない（ユーザーの権限からサービス間の呼び出し可否を導出しないため）
-- TTL は独立の 120 秒とし、入口トークンの exp で cap しない（認可根拠が辺ポリシーにあり、ユーザー権限は認可に用いないため）
+- TTL は独立の 120 秒とし、入口トークンの exp を上限にしない（認可根拠が辺ポリシーにあり、ユーザー権限は認可に用いないため）
 
 ## 内部 JWT
 
-外部トークンの検証成功後、以下の内部 JWT を発行する
-scope は外部トークンの値を転記し、拡大も暗黙の縮小もしない
+外部トークンの検証に成功した後、以下の内部 JWT を発行する。
+scope は外部トークンの値を転記し、拡大も暗黙の縮小もしない。
 
 ### クレーム一覧
 
@@ -218,8 +217,8 @@ scope は外部トークンの値を転記し、拡大も暗黙の縮小もし�
 
 ### TTL と再利用
 
-- TTL 120 秒。制約は2段に分かれ、いずれも RPC の「開始」に対して働く（完了期限は課さない）
-  (1) サービス入口で検証済みのローカル処理は、その内部 JWT の失効後も継続してよい。検証は入口の一度きりで、ローカル処理の長さは TTL を要求しない
+- TTL 120 秒。制約は2段に分かれ、いずれも RPC の「開始」に適用する（完了期限は課さない）
+  (1) サービス入口で検証済みのローカル処理は、その内部 JWT の失効後も継続してよい。検証は入口での一度きりであり、ローカル処理を TTL 内に終える必要はない
   (2) その入口内部 JWT を文脈トークンとして新しい後段 RPC を開始できるのは、提示時点で実際の `exp` より前の場合に限る（「サービス間経路の検証と再発行」）。入口変換の `exp` は元トークンの残存時間で短縮されるため、固定120秒では判定しない
   開始済みの RPC の完了は、再発行された内部 JWT（独立の 120 秒）と各 RPC のタイムアウト設定に従う。入口 JWT の exp を完了期限（deadline）として伝搬・強制はしない
 - TTL が規定するのはリプレイの窓と、鍵漏えい時の残存トークンの寿命
@@ -256,7 +255,7 @@ streamingの全件bufferingをせず、backpressureと切断を扱う。非冪�
 
 ## メソッド認可表
 
-各サービス仕様の認可欄からの導出（各仕様が正。食い違う場合は各仕様に従う）
+本表は各サービス仕様の認可欄から導出したものである。各仕様を正とし、食い違う場合は各仕様に従う。
 
 ### token_use = event_access を要求（Token Exchange を経たトークンが必要）
 
@@ -287,7 +286,7 @@ streamingの全件bufferingをせず、backpressureと切断を扱う。非冪�
 
 Tenant.GetEvent（テナント文脈必須）、Tenant.GetObservationSettings、Graph 供給系（GetCurrentRevision／GetObservationPointMappings／GetGatePoints／GetDisplayNames／GetQrLocations）、Observation の GetGuestSnapshot、Operation の RequestProposalDelivery／RecordFeedbackValues／ListStaffMessages（Guest Service の復旧時）、Notification.SendPush、Reference Aggregation の SubmitAnonymizedFeedback／GetReferenceValues、Observation.ReportMeasurements（Guest Service 由来）
 
-Flow.Optimize と Line.GuideQueues は Service Gateway を経由しないため本表にない（到達制御で Observation に限る直接呼び出し。Flow Control、Line Control）
+Flow.Optimize と Line.GuideQueues は Service Gateway を経由しないため本表にない（到達制御で呼び出し元を Observation に限る直接呼び出し。Flow Control、Line Control）
 
 ### token_use = registration を要求
 
@@ -317,7 +316,7 @@ StartTenantRegistrationには、送信元単位のレート制限、ボット対
 
 ## エラー方針
 
-外部レスポンスの本文に tenant／event／membership／失効の詳細を漏らさない
+外部レスポンスの本文に tenant／event／membership／失効の詳細を漏らさない。
 エラーコードによる区別は禁じない。存在しない識別子と権限のない識別子を別のコードで返してよい（識別子は推測できないため。Tenant Management のエラー節）
 
 | 事象 | Connect エラーコード |
