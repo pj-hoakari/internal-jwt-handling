@@ -105,7 +105,7 @@ flowchart LR
 - IdP 発行トークンは Service Gateway が検証し、内部 JWT へ変換して各サービスへ転送する。JWKS と introspection の endpoint は OIDC Discovery と Authorization Server Metadata から解決する（service_gateway_spec.md）
   各サービスは Service Gateway の JWKS で内部 JWT をローカル検証する（図では省略）
 - introspection は管理系書き込み6 RPCの active／revoked 確認に限定し、同じ6 RPCの現在権限は Tenant Management が同一 DB で確認する
-- Flow／Line の呼び出し元は観測のみで、この呼び出しは Service Gateway を経由しない（各仕様参照）。Realtime・Notification は Operation の支援機構である（独立コンテキストではない）
+- Flow／Line の呼び出し元は観測のみで、この呼び出しは Service Gateway を経由しない（各仕様参照）。Flow／Line の型も観測の外へ出さず、Operation・Reference Aggregation とは各サービスの型で受け渡す（観測が変換する）。Realtime・Notification は Operation の支援機構である（独立コンテキストではない）
 - Firestore の読み取り（Realtime の変更検知、WebRTC シグナリング）は Firebase Auth カスタムトークンによるアクセス制御を伴う（Realtime、Edge Bridge Service）
 - 関係参照（RelationAdminService）はTenant Managementが実装する。ClaimTenantOwnershipのオーナー所属作成はサービス内部で完結し、サービス間RPCを経ない
 - ゲート開閉（OperateGate）・観測点設定変更（UpdateObservationPointConfig）はスタッフアプリから Observation を直接呼び出す。Operation→Observation の同期 RPC はない
@@ -137,7 +137,7 @@ sequenceDiagram
   Edge->>Obs: 計測値送信（event_access）
   Obs->>Obs: 正規化（人/分）・観測スナップショット確定
   Obs->>GA: 現在のグラフ版・紐づけ・ゲート指定・QR 設置箇所を取得
-  Obs->>Flow: Optimize（グラフ＋スコア＋履歴＋検知状態＋手動介入＋参照値）
+  Obs->>Flow: Optimize（Flow の型へ変換したグラフ・スコア＋履歴の要約＋検知状態＋手動介入＋参照値＋設定値）
   Flow-->>Obs: 提案＋更新後の検知状態（観測が解釈せず永続化）
   Obs->>Line: GuideQueues（グラフ＋局所スコア＋ゲート状態＋前回行列状態＋履歴）
   Line-->>Obs: 更新後行列状態＋検知＋案内＋guest_digest＋形状提案
