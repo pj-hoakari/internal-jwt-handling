@@ -124,7 +124,7 @@ protoの採用版を固定し、更新時は機械的な互換性と、追加フ
 - 署名は Discovery の `jwks_uri` から取得した JWKS でローカル検証する。IdP の JWKS を参照するのは原則 Service Gateway のみで、明示例外は Edge Bridge Service（`event_access` の直接検証。Edge Bridge Service）
 - claim 検証: iss（IdP）、aud（バックエンド API 全体の論理 audience。例 `backend-api`。値は1つで、Edge Bridge Service も同じ値を検証する）、exp／nbf（clock skew 許容 ±30 秒）、token_use、client_id（発行先 client）
 - 送信者拘束（DPoP。RFC 9449）: `cnf`（`jkt`）を持つ外部トークンには DPoP proof を要求し検証する。検証項目は、proof の署名、トークンの `cnf`（`jkt`）と proof の公開鍵の一致、アクセストークンのハッシュの一致、HTTP メソッドと対象 URI の一致、発行時刻の許容窓、および proof 識別子の再生防止とする
-- 束縛を要求するのは public client（スタッフアプリ、エッジ端末の観測ページ）へ発行されたトークンに限る。移行中は `cnf` を持たないトークンを従来どおり扱い、public client の対応完了後に、public client へ発行された束縛のないトークンを拒否へ切り替える（発行先は `client_id` claim で判定する）。BFF（confidential client）へ発行されたトークンには束縛を要求しない
+- 束縛を要求するのは public client（スタッフアプリ）へ発行されたトークンに限る。エッジ端末の観測ページは BFF の背後の confidential client であり、束縛を要求しない（ADR-0087）。移行中は `cnf` を持たないトークンを従来どおり扱い、public client の対応完了後に、public client へ発行された束縛のないトークンを拒否へ切り替える（発行先は `client_id` claim で判定する）。BFF（confidential client）へ発行されたトークンには束縛を要求しない
 - proof 識別子の再生防止は短命の保持を要する。JWT 発行処理をステートレスに保つ方針の明示的な例外とする
 - 送信者拘束は外部トークンの層で完結させ、内部 JWT へ `cnf` 等の束縛クレームを持ち込まない
 - メソッド単位の要求 token_use と scope を認可表（後述）で強制し、満たさない要求は宛先サービスへ転送しない。scope は発行時点の権限スナップショットであり、各サービスも内部 JWT の scope を主判定に用いる（入口と宛先の二重確認）。Service Gateway は値を変更せず内部 JWT へ転記する
@@ -243,7 +243,6 @@ JWKSのURLと必要ならHEAD対応、ETag・HTTPキャッシュの具体値は�
 Guest HTTPは既知のパス・method・固定Guest宛先に限定し、未知RPCをGuestへ転送しない。匿名要求でもGateway→Guestの転送は到達制御を通る経路で行う。
 IdPのDiscovery・JWKS・検証要求、Google metadata、CORS・必要な監視はConnect業務RPC外の限定例外とする。
 例外ごとに受理規則を設け、任意HTTP転送を追加しない。CORS応答の許可を業務RPCの認証成功として扱わない。
-CORSで許可するオリジンは設定として完全一致で持つ。エッジ端末の観測ページは外部トークンとDPoP proofを付けて公開用受信口をブラウザから直接呼ぶため、その配信元を許可する（ADR-0086）。
 
 ## 型付き委譲の通信契約
 
