@@ -63,7 +63,7 @@ flowchart LR
 
   %% クライアント → GW → 各サービス
   StaffApp -- "全 RPC（Operation・Observation・Realtime.Fetch・Notification.トークン管理 等）" --> GW
-  AdminUI -- "匿名の仮テナント作成・所有権取得・Tenant管理・Graph編集・エッジ登録" --> GW
+  AdminUI -- "匿名の仮テナント作成・所有権取得・Tenant管理・Graph編集・エッジ登録・観測設定値" --> GW
   EdgeDev -- "計測値送信・Heartbeat（event_access）" --> GW
   EdgeDev -. "シグナリング" .- EB
   AdminUI -. "シグナリング" .- EB
@@ -77,7 +77,6 @@ flowchart LR
   OBS -- "GuideQueues（GW 非経由の直接呼び出し）" --> LINE
   OBS -- "配信依頼・フィードバック引き渡し" --> OP
   OBS -- "参照値取得" --> RA
-  OBS -- "GetObservationSettings（設定値）" --> TM
   OP -- "SendPush（閉デバイス）" --> NT
   OP -- "匿名化済みフィードバック投入（内部バッチ）" --> RA
   GS -- "QR 計上・復旧 pull" --> OBS

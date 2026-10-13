@@ -74,10 +74,8 @@ protoの採用版を固定し、更新時は機械的な互換性と、追加フ
 |---|---|---|---|
 | Tenant Management | `tolo.tenant.v1.TenantService` | StartTenantRegistration | 公開（管理 UI。未認証） |
 | 〃 | 〃 | ClaimTenantOwnership | 公開（管理 UI。registration） |
-| 〃 | 〃 | ChangeTenantContract、ArchiveTenant、CreateEvent、AssignEventType、TransitionEventStatus、ListEvents | 公開（管理 UI、ListEvents はスタッフアプリも） |
+| 〃 | 〃 | ChangeTenantContract、ArchiveTenant、CreateEvent、TransitionEventStatus、ListEvents | 公開（管理 UI、ListEvents はスタッフアプリも） |
 | 〃 | 〃 | GetEvent | 内部オンリー（Graph Authoring の参照整合） |
-| 〃 | 〃 | GetObservationSettings | 内部オンリー（Observation の設定値取得） |
-| 〃 | 〃 | UpdateObservationSettings | 公開（管理 UI） |
 | 〃 | `tolo.relation.v1.RelationAdminService` | AddTenantMember、ChangeTenantRole、GrantEventRole、RevokeRole、ListMemberships | 公開（管理 UI。関係参照は Tenant Management が実装） |
 | Graph Authoring | `tolo.graph.v1.GraphAuthoringService` | SaveGraph、MapObservationPoint、AddQrLocation、UpdateQrLocation、RemoveQrLocation、GetGraph、PublishRevision | 公開（管理 UI） |
 | 〃 | `tolo.graph.v1.GraphSupplyService` | 全 RPC（GetCurrentRevision、GetObservationPointMappings、GetDisplayNames、GetGatePoints、GetQrLocations） | 内部オンリー（Observation・Guest Service） |
@@ -88,6 +86,7 @@ protoの採用版を固定し、更新時は機械的な互換性と、追加フ
 | 〃 | `tolo.observation.v1.ManualInterventionService` | 全 RPC（OperateGate、ToggleDangerFlag、RegisterScheduleEvent、ReportCongestion、CorrectQueue） | 公開（スタッフアプリ） |
 | 〃 | `tolo.observation.v1.StatusQueryService` | GetEventOverview | 公開（スタッフアプリ） |
 | 〃 | 〃 | GetGuestSnapshot | 内部オンリー（Guest Service の復旧 pull） |
+| 〃 | `tolo.observation.v1.ObservationSettingsService` | 全 RPC（GetObservationSettings、UpdateObservationSettings） | 公開（管理 UI） |
 | Operation | `tolo.operation.v1.StaffCommunicationService` | SendStaffMessage、RevokeStaffMessage、ShareGuidanceInfo | 公開（スタッフアプリ） |
 | 〃 | 〃 | ListStaffMessages | 公開（スタッフアプリ）＋内部（Guest Service の復旧 pull） |
 | 〃 | `tolo.operation.v1.OperationControlService` | 全 RPC（DirectReassignment、ApplyReassignment、ListReassignments） | 公開（スタッフアプリ、ListReassignments は管理 UI も） |
@@ -263,10 +262,10 @@ streamingの全件bufferingをせず、backpressureと切断を扱う。非冪�
 |---|---|---|
 | Graph Authoring | SaveGraph、MapObservationPoint、AddQrLocation／UpdateQrLocation／RemoveQrLocation、PublishRevision | events.manage |
 | Graph Authoring | GetGraph | events.read |
-| Observation | RegisterEdgeDevice、UnregisterEdgeDevice | events.manage |
+| Observation | RegisterEdgeDevice、UnregisterEdgeDevice、UpdateObservationSettings | events.manage |
 | Observation | OperateGate、UpdateObservationPointConfig、ToggleDangerFlag、RegisterScheduleEvent、ReportCongestion、CorrectQueue | events.operate |
 | Observation | ReportMeasurements、Heartbeat | events.report |
-| Observation | ListEdgeDevices、GetEventOverview | events.read |
+| Observation | ListEdgeDevices、GetEventOverview、GetObservationSettings | events.read |
 | Operation | SendStaffMessage、RevokeStaffMessage、ShareGuidanceInfo、DirectReassignment、ApplyReassignment | events.operate |
 | Operation | ListStaffMessages、ListReassignments、GetHistoryDigest、UpdateConnectionState | events.read |
 | Realtime | FetchDeliveries、IssueFirestoreToken | events.read |
@@ -276,7 +275,7 @@ streamingの全件bufferingをせず、backpressureと切断を扱う。非冪�
 | サービス | RPC | scope |
 |---|---|---|
 | Tenant Management | ChangeTenantContract、ArchiveTenant | tenant.write |
-| Tenant Management | CreateEvent、AssignEventType、TransitionEventStatus、UpdateObservationSettings | events.manage |
+| Tenant Management | CreateEvent、TransitionEventStatus | events.manage |
 | Tenant Management | ListEvents | events.read |
 | Tenant Management（RelationAdminService） | AddTenantMember、ChangeTenantRole、GrantEventRole、RevokeRole | tenant.write |
 | Tenant Management（RelationAdminService） | ListMemberships | tenant.read |
@@ -284,7 +283,7 @@ streamingの全件bufferingをせず、backpressureと切断を扱う。非冪�
 
 ### token_use = service を要求（サービス間）
 
-Tenant.GetEvent（テナント文脈必須）、Tenant.GetObservationSettings、Graph 供給系（GetCurrentRevision／GetObservationPointMappings／GetGatePoints／GetDisplayNames／GetQrLocations）、Observation の GetGuestSnapshot、Operation の RequestProposalDelivery／RecordFeedbackValues／ListStaffMessages（Guest Service の復旧時）、Notification.SendPush、Reference Aggregation の SubmitAnonymizedFeedback／GetReferenceValues、Observation.ReportMeasurements（Guest Service 由来）
+Tenant.GetEvent（テナント文脈必須）、Graph 供給系（GetCurrentRevision／GetObservationPointMappings／GetGatePoints／GetDisplayNames／GetQrLocations）、Observation の GetGuestSnapshot、Operation の RequestProposalDelivery／RecordFeedbackValues／ListStaffMessages（Guest Service の復旧時）、Notification.SendPush、Reference Aggregation の SubmitAnonymizedFeedback／GetReferenceValues、Observation.ReportMeasurements（Guest Service 由来）
 
 Flow.Optimize と Line.GuideQueues は Service Gateway を経由しないため本表にない（到達制御で呼び出し元を Observation に限る直接呼び出し。Flow Control、Line Control）
 
