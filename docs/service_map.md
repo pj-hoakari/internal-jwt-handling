@@ -14,8 +14,9 @@ Cloud Runの公開用GatewayはInvoker IAMを無効化してRPCごとに外部�
 - Edge Bridge Service は WebRTC のシグナリングのみを担い、Service Gateway の後ろに置かない。映像はページ間で直接やりとりする
 - PubSub は情報更新 push の3トピックだけに使う。at-least-once 配信、イベント単位の順序キー、受信側の冪等処理を前提とする
 - 実線＝同期RPC（Connect。直接例外のプロトコルは各仕様に従う）または限定HTTP例外、太線（==>）＝PubSub、点線＝リスナー・参照系・外部プッシュ
-- BFF は図では省略する（管理 UI の Auth・GW への接続は BFF 経由。外部トークンは BFF のサーバ側に保持し、ブラウザへ渡さない）
-  スタッフアプリはログインも Token Exchange も直接 Auth と行う（public client の直接交換。トークンは DPoP で鍵束縛）。API 呼び出しはアプリ→GW のまま。BFF は現場運用の認証経路上にない
+- BFF は図では省略する（管理 UI と観測ページの Auth・GW・Edge Bridge Service への接続は BFF 経由。外部トークンは BFF のサーバ側に保持し、ブラウザへ渡さない）
+  スタッフアプリはログインも Token Exchange も直接 Auth と行う（public client の直接交換。トークンは DPoP で鍵束縛）。API 呼び出しはアプリ→GW のまま
+  観測ページの Heartbeat と計測報告は BFF を通るため、BFF は現場運用の経路上にある（ADR-0088）
 
 ## 1. サービス間の関係全体図
 
