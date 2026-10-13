@@ -243,6 +243,7 @@ JWKSのURLと必要ならHEAD対応、ETag・HTTPキャッシュの具体値は�
 Guest HTTPは既知のパス・method・固定Guest宛先に限定し、未知RPCをGuestへ転送しない。匿名要求でもGateway→Guestの転送は到達制御を通る経路で行う。
 IdPのDiscovery・JWKS・検証要求、Google metadata、CORS・必要な監視はConnect業務RPC外の限定例外とする。
 例外ごとに受理規則を設け、任意HTTP転送を追加しない。CORS応答の許可を業務RPCの認証成功として扱わない。
+CORSで許可するオリジンは設定として完全一致で持つ。エッジ端末の観測ページは外部トークンとDPoP proofを付けて公開用受信口をブラウザから直接呼ぶため、その配信元を許可する（ADR-0086）。
 
 ## 型付き委譲の通信契約
 
