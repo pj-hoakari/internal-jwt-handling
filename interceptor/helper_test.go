@@ -6,13 +6,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 
 	"github.com/pj-hoakari/protoc-gen-authz-go/authz"
 
@@ -69,17 +71,16 @@ type jsonCodec struct{}
 
 func (jsonCodec) Name() string { return "json" }
 
-func (jsonCodec) Marshal(message any) ([]byte, error) {
-	encoded, err := json.Marshal(message)
-	if err != nil {
-		return nil, fmt.Errorf("marshal test message: %w", err)
+func (jsonCodec) MarshalWrite(_ context.Context, dst io.Writer, message any) error {
+	if err := json.NewEncoder(dst).Encode(message); err != nil {
+		return fmt.Errorf("marshal test message: %w", err)
 	}
 
-	return encoded, nil
+	return nil
 }
 
-func (jsonCodec) Unmarshal(data []byte, message any) error {
-	if err := json.Unmarshal(data, message); err != nil {
+func (jsonCodec) UnmarshalRead(_ context.Context, src io.Reader, message any) error {
+	if err := json.NewDecoder(src).Decode(message); err != nil {
 		return fmt.Errorf("unmarshal test message: %w", err)
 	}
 
@@ -274,7 +275,12 @@ type testHandler struct {
 	found  bool
 }
 
-func (h *testHandler) handle(ctx context.Context, req *connect.Request[testMessage]) (*connect.Response[testMessage], error) {
+func (h *testHandler) handle(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req testMessage
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+
 	claims, found := internaljwt.ClaimsFromContext(ctx)
 
 	h.mu.Lock()
@@ -284,7 +290,7 @@ func (h *testHandler) handle(ctx context.Context, req *connect.Request[testMessa
 	h.claims = claims
 	h.found = found
 
-	return connect.NewResponse(&testMessage{Value: req.Msg.Value}), nil
+	return stream.Send(&testMessage{Value: req.Value})
 }
 
 func (h *testHandler) result(t *testing.T) (internaljwt.Claims, bool) {
@@ -308,10 +314,10 @@ func (h *testHandler) reached() bool {
 }
 
 // newTestServer serves the test procedures behind interceptors.
-func newTestServer(t *testing.T, handler *testHandler, interceptors ...connect.Interceptor) *httptest.Server {
+func newTestServer(t *testing.T, handler *testHandler, interceptors ...connect.ServerInterceptor) *httptest.Server {
 	t.Helper()
 
-	mux := http.NewServeMux()
+	server := connect.NewServer(interceptors...)
 
 	procedures := []string{
 		testProcedure,
@@ -321,18 +327,19 @@ func newTestServer(t *testing.T, handler *testHandler, interceptors ...connect.I
 	}
 
 	for _, procedure := range procedures {
-		mux.Handle(procedure, connect.NewUnaryHandler(
-			procedure,
-			handler.handle,
-			connect.WithCodec(jsonCodec{}),
-			connect.WithInterceptors(interceptors...),
-		))
+		server.Register(connect.Method{
+			Spec:    connect.Spec{Procedure: procedure, StreamType: connect.StreamTypeUnary},
+			Handler: handler.handle,
+		})
 	}
 
-	server := httptest.NewServer(mux)
-	t.Cleanup(server.Close)
+	mux := http.NewServeMux()
+	connecthttp.Mount(mux, server, connecthttp.WithCodecs(jsonCodec{}))
 
-	return server
+	httpServer := httptest.NewServer(mux)
+	t.Cleanup(httpServer.Close)
+
+	return httpServer
 }
 
 // call invokes a procedure of the test server, presenting authorization when
@@ -340,20 +347,25 @@ func newTestServer(t *testing.T, handler *testHandler, interceptors ...connect.I
 func call(t *testing.T, server *httptest.Server, procedure, authorization string) error {
 	t.Helper()
 
-	client := connect.NewClient[testMessage, testMessage](
+	client := connect.NewClient(connecthttp.NewTransport(
 		server.Client(),
-		server.URL+procedure,
-		connect.WithCodec(jsonCodec{}),
-	)
+		server.URL,
+		connecthttp.WithCodecs(jsonCodec{}),
+	))
 
-	request := connect.NewRequest(&testMessage{Value: "ping"})
+	ctx, info := connect.NewClientContext(t.Context())
 	if authorization != "" {
-		request.Header().Set("Authorization", authorization)
+		info.RequestHeader().Set("Authorization", authorization)
 	}
 
-	_, err := client.CallUnary(t.Context(), request)
+	var response testMessage
 
-	return err
+	return client.CallUnary(
+		ctx,
+		connect.Spec{Procedure: procedure, StreamType: connect.StreamTypeUnary},
+		&testMessage{Value: "ping"},
+		&response,
+	)
 }
 
 // assertBareCode checks that err reached the client as code and told it nothing else.
@@ -380,7 +392,7 @@ func newInterceptor(
 	tokenVerifier interceptor.TokenVerifier,
 	table authz.Policies,
 	opts ...interceptor.Option,
-) connect.Interceptor {
+) connect.ServerInterceptor {
 	t.Helper()
 
 	built, err := interceptor.New(tokenVerifier, table, opts...)
@@ -391,30 +403,37 @@ func newInterceptor(
 	return built
 }
 
-// fakeStreamingConn is the handler's side of a streaming call, which connect
-// lets a test implement itself.
-type fakeStreamingConn struct {
-	spec   connect.Spec
-	header http.Header
+type fakeServerStream struct{}
+
+func (fakeServerStream) Receive(any) error  { return nil }
+func (fakeServerStream) SendHeaders() error { return nil }
+func (fakeServerStream) Send(any) error     { return nil }
+
+func newStreamingServer(handler connect.ServerFunc, interceptors ...connect.ServerInterceptor) *connect.Server {
+	server := connect.NewServer(interceptors...)
+
+	for _, procedure := range []string{
+		testProcedure,
+		testPublicProcedure,
+		testInternalProcedure,
+		testUntabledProcedure,
+	} {
+		server.Register(connect.Method{
+			Spec:    connect.Spec{Procedure: procedure, StreamType: connect.StreamTypeBidi},
+			Handler: handler,
+		})
+	}
+
+	return server
 }
 
-func (c *fakeStreamingConn) Spec() connect.Spec           { return c.spec }
-func (c *fakeStreamingConn) Peer() connect.Peer           { return connect.Peer{} }
-func (c *fakeStreamingConn) Receive(any) error            { return nil }
-func (c *fakeStreamingConn) RequestHeader() http.Header   { return c.header }
-func (c *fakeStreamingConn) Send(any) error               { return nil }
-func (c *fakeStreamingConn) ResponseHeader() http.Header  { return http.Header{} }
-func (c *fakeStreamingConn) ResponseTrailer() http.Header { return http.Header{} }
+func callStreaming(t *testing.T, server *connect.Server, procedure, authorization string) error {
+	t.Helper()
 
-// newStreamingConn is a streaming call of procedure presenting authorization.
-func newStreamingConn(procedure, authorization string) *fakeStreamingConn {
-	header := http.Header{}
+	info := &connect.CallInfo{}
 	if authorization != "" {
-		header.Set("Authorization", authorization)
+		info.RequestHeader().Set("Authorization", authorization)
 	}
 
-	return &fakeStreamingConn{
-		spec:   connect.Spec{Procedure: procedure, StreamType: connect.StreamTypeBidi},
-		header: header,
-	}
+	return server.Call(t.Context(), procedure, info, fakeServerStream{})
 }
