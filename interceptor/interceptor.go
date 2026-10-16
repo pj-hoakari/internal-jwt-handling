@@ -16,27 +16,25 @@
 //		return err
 //	}
 //
-//	mux.Handle(greetingv1connect.NewGreeterServiceHandler(
-//		service,
-//		connect.WithInterceptors(authn),
-//	))
+//	server := connect.NewServer(authn)
+//	greetingv1connect.RegisterGreeterServiceHandler(server, service)
+//	connecthttp.Mount(mux, server)
 //
 // A procedure the table does not name is a misconfiguration and is refused
 // with CodeInternal, so one interceptor must know every procedure it guards.
 // A process serving several services either merges the tables with authz.Merge
-// and puts the one interceptor on every handler, or builds an interceptor per
-// service from that service's own table.
+// and passes the one interceptor to the server, or builds an interceptor per
+// service from that service's own table and a server per service.
 package interceptor
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"slices"
 	"strings"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	"github.com/pj-hoakari/protoc-gen-authz-go/authz"
 
@@ -133,7 +131,7 @@ type interceptor struct {
 
 // New builds the interceptor that authenticates and authorizes every procedure
 // named in policies.
-func New(tokenVerifier TokenVerifier, policies authz.Policies, opts ...Option) (connect.Interceptor, error) {
+func New(tokenVerifier TokenVerifier, policies authz.Policies, opts ...Option) (connect.ServerInterceptor, error) {
 	if tokenVerifier == nil {
 		return nil, ErrMissingVerifier
 	}
@@ -144,54 +142,39 @@ func New(tokenVerifier TokenVerifier, policies authz.Policies, opts ...Option) (
 
 	resolved := newOptions(opts)
 
-	return &interceptor{
+	built := &interceptor{
 		verifier:               tokenVerifier,
 		policies:               policies,
 		reporter:               resolved.reporter,
 		authenticatedTokenUses: resolved.authenticatedTokenUses,
 		tokenUses:              resolved.tokenUses,
-	}, nil
-}
-
-// WrapUnary decides a unary call.
-func (i *interceptor) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
-	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-		authorized, err := i.authorize(ctx, req.Spec().Procedure, req.Header())
-		if err != nil {
-			return nil, err
-		}
-
-		return next(authorized, req)
 	}
+
+	return built.wrap, nil
 }
 
-// WrapStreamingHandler decides a streaming call the same way as a unary one.
-func (i *interceptor) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.StreamingHandlerFunc {
-	return func(ctx context.Context, conn connect.StreamingHandlerConn) error {
-		authorized, err := i.authorize(ctx, conn.Spec().Procedure, conn.RequestHeader())
+func (i *interceptor) wrap(next connect.ServerFunc) connect.ServerFunc {
+	return func(ctx context.Context, spec connect.Spec, stream connect.ServerStream) error {
+		info, _ := connect.CallInfoForServerContext(ctx)
+
+		authorized, err := i.authorize(ctx, spec.Procedure, info.RequestHeader())
 		if err != nil {
 			return err
 		}
 
-		return next(authorized, conn)
+		return next(authorized, spec, stream)
 	}
-}
-
-// WrapStreamingClient passes outgoing calls through: the interceptor guards a
-// handler, not a client.
-func (i *interceptor) WrapStreamingClient(next connect.StreamingClientFunc) connect.StreamingClientFunc {
-	return next
 }
 
 // authorize returns the context the handler is to run under.
 // Every error it returns is a *connect.Error carrying no message,
 // so that the cause reaches the reporter rather than the client.
-func (i *interceptor) authorize(ctx context.Context, procedure string, header http.Header) (context.Context, error) {
+func (i *interceptor) authorize(ctx context.Context, procedure string, header *connect.Header) (context.Context, error) {
 	policy, ok := i.policies.Lookup(procedure)
 	if !ok {
 		i.report(ctx, procedure, fmt.Errorf("%w: %q", ErrUnknownProcedure, procedure))
 
-		return nil, connect.NewError(connect.CodeInternal, nil)
+		return nil, connect.NewError(connect.CodeInternal, "")
 	}
 
 	if policy.Level == authz.LevelPublic {
@@ -202,7 +185,7 @@ func (i *interceptor) authorize(ctx context.Context, procedure string, header ht
 	if err != nil {
 		i.report(ctx, procedure, err)
 
-		return nil, connect.NewError(code, nil)
+		return nil, connect.NewError(code, "")
 	}
 
 	return internaljwt.ContextWithClaims(ctx, claims), nil
@@ -213,7 +196,7 @@ func (i *interceptor) check(
 	ctx context.Context,
 	procedure string,
 	policy authz.Policy,
-	header http.Header,
+	header *connect.Header,
 ) (internaljwt.Claims, connect.Code, error) {
 	tokenUses, err := i.acceptedTokenUses(policy, procedure)
 	if err != nil {
@@ -250,7 +233,7 @@ func (i *interceptor) check(
 }
 
 // verify reads the bearer token of the Authorization header and verifies it.
-func (i *interceptor) verify(ctx context.Context, header http.Header) (internaljwt.Claims, error) {
+func (i *interceptor) verify(ctx context.Context, header *connect.Header) (internaljwt.Claims, error) {
 	token, err := verifier.BearerToken(header.Get(authorizationHeader))
 	if err != nil {
 		return internaljwt.Claims{}, err

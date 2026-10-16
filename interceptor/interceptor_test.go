@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	"github.com/pj-hoakari/protoc-gen-authz-go/authz"
 
@@ -305,13 +305,13 @@ func TestInterceptorReportsAFailedKeyResolutionOnAStreamingCall(t *testing.T) {
 	)
 
 	reached := false
-	next := wrapped.WrapStreamingHandler(func(context.Context, connect.StreamingHandlerConn) error {
+	server := newStreamingServer(func(context.Context, connect.Spec, connect.ServerStream) error {
 		reached = true
 
 		return nil
-	})
+	}, wrapped)
 
-	err := next(t.Context(), newStreamingConn(testProcedure, "Bearer "+token))
+	err := callStreaming(t, server, testProcedure, "Bearer "+token)
 	assertBareCode(t, err, connect.CodeUnavailable)
 
 	if reached {
@@ -819,12 +819,12 @@ func TestInterceptorDecidesAStreamingCall(t *testing.T) {
 		found   bool
 	)
 
-	next := wrapped.WrapStreamingHandler(func(ctx context.Context, _ connect.StreamingHandlerConn) error {
+	server := newStreamingServer(func(ctx context.Context, _ connect.Spec, _ connect.ServerStream) error {
 		reached = true
 		claims, found = internaljwt.ClaimsFromContext(ctx)
 
 		return nil
-	})
+	}, wrapped)
 
 	reset := func() {
 		reached, found = false, false
@@ -833,7 +833,7 @@ func TestInterceptorDecidesAStreamingCall(t *testing.T) {
 	t.Run("with a valid token", func(t *testing.T) {
 		reset()
 
-		if err := next(t.Context(), newStreamingConn(testProcedure, "Bearer "+token)); err != nil {
+		if err := callStreaming(t, server, testProcedure, "Bearer "+token); err != nil {
 			t.Fatalf("streaming handler: %v", err)
 		}
 
@@ -849,7 +849,7 @@ func TestInterceptorDecidesAStreamingCall(t *testing.T) {
 	t.Run("on a public procedure", func(t *testing.T) {
 		reset()
 
-		if err := next(t.Context(), newStreamingConn(testPublicProcedure, "")); err != nil {
+		if err := callStreaming(t, server, testPublicProcedure, ""); err != nil {
 			t.Fatalf("streaming handler: %v", err)
 		}
 
@@ -861,7 +861,7 @@ func TestInterceptorDecidesAStreamingCall(t *testing.T) {
 	t.Run("without a credential", func(t *testing.T) {
 		reset()
 
-		err := next(t.Context(), newStreamingConn(testProcedure, ""))
+		err := callStreaming(t, server, testProcedure, "")
 		assertBareCode(t, err, connect.CodeUnauthenticated)
 
 		if reached {
@@ -881,7 +881,7 @@ func TestInterceptorDecidesAStreamingCall(t *testing.T) {
 	t.Run("on an internal procedure from a tenant_access token", func(t *testing.T) {
 		reset()
 
-		err := next(t.Context(), newStreamingConn(testInternalProcedure, "Bearer "+token))
+		err := callStreaming(t, server, testInternalProcedure, "Bearer "+token)
 		assertBareCode(t, err, connect.CodeUnauthenticated)
 
 		if reached {
@@ -892,37 +892,13 @@ func TestInterceptorDecidesAStreamingCall(t *testing.T) {
 	t.Run("on a procedure the table does not name", func(t *testing.T) {
 		reset()
 
-		err := next(t.Context(), newStreamingConn(testUntabledProcedure, "Bearer "+token))
+		err := callStreaming(t, server, testUntabledProcedure, "Bearer "+token)
 		assertBareCode(t, err, connect.CodeInternal)
 
 		if reached {
 			t.Fatal("the handler was reached despite the rejection")
 		}
 	})
-}
-
-func TestInterceptorPassesStreamingClientsThrough(t *testing.T) {
-	t.Parallel()
-
-	_, tokenVerifier, _ := tenantAccessToken(t)
-
-	called := false
-	next := connect.StreamingClientFunc(func(context.Context, connect.Spec) connect.StreamingClientConn {
-		called = true
-
-		return nil
-	})
-
-	built := newInterceptor(t, tokenVerifier, policies(testProcedure, authz.Policy{Level: authz.LevelAuthenticated}))
-
-	wrapped := built.WrapStreamingClient(next)
-	if conn := wrapped(t.Context(), connect.Spec{Procedure: testProcedure}); conn != nil {
-		t.Fatalf("conn = %v, want the wrapped function's own nil", conn)
-	}
-
-	if !called {
-		t.Fatal("the wrapped streaming client was not called")
-	}
 }
 
 func TestInterceptorMatchesTheProcedureExactly(t *testing.T) {
