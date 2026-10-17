@@ -308,6 +308,7 @@ StartTenantRegistrationには、送信元単位のレート制限、ボット対
 - tenant_id／event_id claim とリクエスト対象の一致を確認する（保護境界の強制）
   claim もリクエストの識別子も公開 ID のため、値をそのまま突合する（internal_jwt.md）
   token_use=service で claim を持たない場合（マシン起点）は突合できない。この場合に処理を続けてよいのは、境界の強制を要さないと各仕様が明示したメソッドに限る
+  明示の仕方は、組で区切るだけで所属を確かめないか、申告とは別の情報源で所属を確かめるかのどちらかとする（ADR-0102）
 - `tenant_access`／`event_access`／`registration` の主判定は、発行時点のスナップショットである scope とする。通常 RPC は現在の membership／permission を都度参照せず、既発行 scope を外部トークンの TTL まで許容する
 - 例外は Tenant Management の管理系書き込み6 RPC（ArchiveTenant、ChangeTenantContract、AddTenantMember、ChangeTenantRole、GrantEventRole、RevokeRole）とする。Tenant Management は同一 DB の現在の membership／permission をローカルに再確認し、Service Gateway の introspection は別に active／revoked を確認する
 - `token_use=service` のメソッド可否は scope ではなく、Service Gateway が照合済みの辺ポリシーを根拠とする
