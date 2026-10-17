@@ -368,7 +368,14 @@ func call(t *testing.T, server *httptest.Server, procedure, authorization string
 	)
 }
 
-// assertBareCode checks that err reached the client as code and told it nothing else.
+var fixedMessages = map[connect.Code]string{
+	connect.CodeUnauthenticated:  "unauthenticated",
+	connect.CodePermissionDenied: "permission denied",
+	connect.CodeUnavailable:      "authentication unavailable",
+	connect.CodeInternal:         "internal error",
+}
+
+// assertBareCode checks that err reached the client as code and told it nothing but the fixed message of code.
 func assertBareCode(t *testing.T, err error, code connect.Code) {
 	t.Helper()
 
@@ -381,8 +388,8 @@ func assertBareCode(t *testing.T, err error, code connect.Code) {
 		t.Fatalf("code = %s, want %s", connectErr.Code(), code)
 	}
 
-	if connectErr.Message() != "" {
-		t.Fatalf("message = %q, want it empty", connectErr.Message())
+	if want := fixedMessages[code]; connectErr.Message() != want {
+		t.Fatalf("message = %q, want %q", connectErr.Message(), want)
 	}
 }
 

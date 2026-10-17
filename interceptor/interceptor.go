@@ -59,6 +59,13 @@ var (
 	ErrUnknownProcedure = errors.New("the policy table does not name the procedure")
 )
 
+var codeMessages = map[connect.Code]string{
+	connect.CodeUnauthenticated:  "unauthenticated",
+	connect.CodePermissionDenied: "permission denied",
+	connect.CodeUnavailable:      "authentication unavailable",
+	connect.CodeInternal:         "internal error",
+}
+
 // TokenVerifier verifies an internal JWT. *verifier.Verifier satisfies it.
 type TokenVerifier interface {
 	Verify(ctx context.Context, token string) (internaljwt.Claims, error)
@@ -78,7 +85,7 @@ type options struct {
 type Option func(*options)
 
 // WithErrorReporter receives every rejection with the procedure and the
-// underlying error. The client only ever sees the connect code.
+// underlying error. The client only ever sees the connect code and its fixed message.
 func WithErrorReporter(reporter func(ctx context.Context, procedure string, err error)) Option {
 	return func(o *options) {
 		o.reporter = reporter
@@ -167,14 +174,15 @@ func (i *interceptor) wrap(next connect.ServerFunc) connect.ServerFunc {
 }
 
 // authorize returns the context the handler is to run under.
-// Every error it returns is a *connect.Error carrying no message,
+// Every error it returns is a *connect.Error carrying only the fixed message of its code,
 // so that the cause reaches the reporter rather than the client.
 func (i *interceptor) authorize(ctx context.Context, procedure string, header *connect.Header) (context.Context, error) {
 	policy, ok := i.policies.Lookup(procedure)
 	if !ok {
-		i.report(ctx, procedure, fmt.Errorf("%w: %q", ErrUnknownProcedure, procedure))
+		err := fmt.Errorf("%w: %q", ErrUnknownProcedure, procedure)
+		i.report(ctx, procedure, err)
 
-		return nil, connect.NewError(connect.CodeInternal, "")
+		return nil, connect.NewError(connect.CodeInternal, codeMessages[connect.CodeInternal]).WithCause(err)
 	}
 
 	if policy.Level == authz.LevelPublic {
@@ -185,7 +193,7 @@ func (i *interceptor) authorize(ctx context.Context, procedure string, header *c
 	if err != nil {
 		i.report(ctx, procedure, err)
 
-		return nil, connect.NewError(code, "")
+		return nil, connect.NewError(code, codeMessages[code]).WithCause(err)
 	}
 
 	return internaljwt.ContextWithClaims(ctx, claims), nil
