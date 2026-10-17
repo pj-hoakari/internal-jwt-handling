@@ -111,7 +111,7 @@ Gateway内部用受信口は、文脈内部JWTの `aud` を呼び出し元サー
 - `tenant_id` は `token_use = tenant_access` および `event_access` の内部 JWT に含まれ、値が非空であることを要する。
 - `event_id` は `token_use = event_access` の内部 JWT に含まれ、値が非空であることを要する。
 - ユーザー起点の `token_use = service` は、変換元の文脈トークンが持つ `tenant_id`／`event_id` を引き写す。
-- マシン起点の `token_use = service` は文脈トークンの有無にかかわらず、`tenant_id`／`event_id` を持たない。
+- マシン起点の `token_use = service` は文脈トークンの有無にかかわらず、`tenant_id`／`event_id` を持たない。マシン起点で呼ばれるテナント単位のメソッドは、テナントとイベントをリクエストで受け取る（ADR-0102）。
 - 公開 ID はいずれもランダムな 16 文字 hex の文字列であり、内部で用いる UUIDv7 等の内部 ID ではない。テナント・イベント操作の識別にはこの公開 ID を用いる。
 - 全サービスの proto の `tenant_id`／`event_id` フィールドも公開 ID を値に取る。クレームとフィールドは同名かつ同義であり、そのまま突合できる。内部主キー（UUIDv7）は各サービスの内部に閉じ、proto にも本クレームにも現れない。
 - `registration`の内部JWTは`tenant_id`／`event_id`を持たない。
