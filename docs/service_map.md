@@ -210,9 +210,9 @@ sequenceDiagram
   User->>IdP: POST /api/signup
   User->>IdP: テナント未指定のAuthorization Code Flow
   IdP-->>User: registration Access Token（scope=tenant.claim）
-  User->>GW: ClaimTenantOwnership<br/>registration Token＋所有権取得トークン
+  User->>GW: ClaimTenantOwnership<br/>registration Token＋所有権取得トークン＋サブドメイン名
   GW->>TM: 主体を維持した内部JWTへ変換して転送
-  TM->>TM: トークン検証・オーナー所属・owned遷移・取得トークン消費
+  TM->>TM: トークン検証・オーナー所属・owned遷移・サブドメイン名の確定・取得トークン消費
   TM-->>User: ownedのTenant
   User->>IdP: tenantId指定で再認可
   IdP-->>User: tenant_access

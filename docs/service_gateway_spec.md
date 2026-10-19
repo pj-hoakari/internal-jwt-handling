@@ -74,6 +74,7 @@ protoの採用版を固定し、更新時は機械的な互換性と、追加フ
 |---|---|---|---|
 | Tenant Management | `tolo.tenant.v1.TenantService` | StartTenantRegistration | 公開（管理 UI。未認証） |
 | 〃 | 〃 | ClaimTenantOwnership | 公開（管理 UI。registration） |
+| 〃 | 〃 | ResolveTenantSubdomain | 公開（管理 UI・ゲスト。未認証） |
 | 〃 | 〃 | ChangeTenantContract、ArchiveTenant、CreateEvent、TransitionEventStatus、ListEvents | 公開（管理 UI、ListEvents はスタッフアプリも） |
 | 〃 | 〃 | GetEvent | 内部オンリー（Graph Authoring の参照整合） |
 | 〃 | `tolo.relation.v1.RelationAdminService` | AddTenantMember、ChangeTenantRole、GrantEventRole、RevokeRole、ListMemberships | 公開（管理 UI。関係参照は Tenant Management が実装） |
@@ -112,6 +113,7 @@ protoの採用版を固定し、更新時は機械的な互換性と、追加フ
 | ユーザー（テナント文脈） | `tenant_access`（IdP 発行） | 検証＋内部 JWT へ変換 |
 | ユーザー（イベント文脈） | `event_access`（IdP 発行） | 検証＋内部 JWT へ変換。エッジ端末（観測ページ）もこの経路 |
 | 仮テナント作成 | なし（未認証） | パススルー。StartTenantRegistrationだけを許可し、匿名作成の保護を適用 |
+| サブドメイン名の解決 | なし（未認証） | パススルー。ResolveTenantSubdomainだけを許可し、レート制限を適用 |
 | 仮テナントの所有権取得 | 所有権取得専用の最小トークン（IdP 発行） | 検証＋内部 JWT へ変換 |
 | サービス間の同期 RPC | 文脈トークン（新規マシン起点だけ省略し、呼び出し元を申告する。後述「サービス間経路の検証と再発行」） | 辺ポリシー照合＋token_use=service の内部 JWT を再発行 |
 | ゲスト | なし（未認証） | パススルー（Guest Service のゲスト向け HTTP） |
@@ -294,9 +296,11 @@ Tenant.ClaimTenantOwnership（scopeは`tenant.claim`）
 ### パススルー
 
 - Tenant.StartTenantRegistration（未認証の仮テナント作成）
+- Tenant.ResolveTenantSubdomain（未認証のサブドメイン名の解決）
 - Guest Serviceのゲスト向けHTTP（未認証）
 
 StartTenantRegistrationには、送信元単位のレート制限、ボット対策、リクエストサイズ上限を適用する。
+ResolveTenantSubdomainには、レート制限とリクエストサイズ上限を適用する。
 具体値と方式は実装フェーズで確定する。
 
 ## サービス側の検証規約
@@ -312,12 +316,12 @@ StartTenantRegistrationには、送信元単位のレート制限、ボット対
 - `tenant_access`／`event_access`／`registration` の主判定は、発行時点のスナップショットである scope とする。通常 RPC は現在の membership／permission を都度参照せず、既発行 scope を外部トークンの TTL まで許容する
 - 例外は Tenant Management の管理系書き込み6 RPC（ArchiveTenant、ChangeTenantContract、AddTenantMember、ChangeTenantRole、GrantEventRole、RevokeRole）とする。Tenant Management は同一 DB の現在の membership／permission をローカルに再確認し、Service Gateway の introspection は別に active／revoked を確認する
 - `token_use=service` のメソッド可否は scope ではなく、Service Gateway が照合済みの辺ポリシーを根拠とする
-- StartTenantRegistrationは内部JWTなしで受理する唯一のTenant Management RPCとし、ほかの同サービスRPCへ未認証要求を転送しない
+- 内部JWTなしで受理するTenant Management RPCはStartTenantRegistrationとResolveTenantSubdomainに限り、ほかの同サービスRPCへ未認証要求を転送しない
 
 ## エラー方針
 
 外部レスポンスの本文に tenant／event／membership／失効の詳細を漏らさない。
-エラーコードによる区別は禁じない。存在しない識別子と権限のない識別子を別のコードで返してよい（識別子は推測できないため。Tenant Management のエラー節）
+エラーコードによる区別は禁じない。存在しない識別子と権限のない識別子を別のコードで返してよい（公開 ID は推測できないため。推測できるサブドメイン名の照会は応答を公開 ID に限る。Tenant Management のエラー節）
 
 | 事象 | Connect エラーコード |
 |---|---|
