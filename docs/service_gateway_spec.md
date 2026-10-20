@@ -266,7 +266,7 @@ streamingの全件bufferingをせず、backpressureと切断を扱う。非冪�
 | Graph Authoring | GetGraph | events.read |
 | Observation | RegisterEdgeDevice、UnregisterEdgeDevice、UpdateObservationSettings | events.manage |
 | Observation | OperateGate、UpdateObservationPointConfig、ToggleDangerFlag、RegisterScheduleEvent、ReportCongestion、CorrectQueue | events.operate |
-| Observation | ReportMeasurements、Heartbeat | events.report |
+| Observation | ReportMeasurements、Heartbeat、ListEdgeDeviceObservationPoints | events.report |
 | Observation | ListEdgeDevices、GetEventOverview、GetObservationSettings | events.read |
 | Operation | SendStaffMessage、RevokeStaffMessage、ShareGuidanceInfo、DirectReassignment、ApplyReassignment | events.operate |
 | Operation | ListStaffMessages、ListReassignments、GetHistoryDigest、UpdateConnectionState | events.read |
