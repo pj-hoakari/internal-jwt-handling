@@ -98,7 +98,7 @@ protoの採用版を固定し、更新時は機械的な互換性と、追加フ
 | 〃 | `tolo.notification.v1.DeviceTokenService` | RegisterDeviceToken、UnregisterDeviceToken | 公開（スタッフアプリ） |
 | Reference Aggregation | `tolo.refagg.v1.ReferenceAggregationService` | SubmitAnonymizedFeedback、GetReferenceValues | 内部オンリー（Operation 投入、Observation 取得） |
 | Guest Service | `tolo.guest.v1.GuestPageService` | 全 RPC（OpenGuestPage、GetCrowd、GetQueues、ListGuestMessages） | 公開（ゲスト。未認証） |
-| 〃 | `tolo.guest.v1.GuestSettingsService` | 全 RPC（GetGuestSettings、UpdateGuestSettings） | 公開（管理 UI） |
+| 〃 | `tolo.guest.v1.GuestSettingsService` | 全 RPC（GetGuestSettings、UpdateGuestSettings、ListIssuedUrls） | 公開（管理 UI） |
 
 補足
 
@@ -271,7 +271,7 @@ streamingの全件bufferingをせず、backpressureと切断を扱う。非冪�
 | Operation | ListStaffMessages、ListReassignments、GetHistoryDigest、UpdateConnectionState | events.read |
 | Realtime | FetchDeliveries、IssueFirestoreToken | events.read |
 | Guest Service | UpdateGuestSettings | events.manage |
-| Guest Service | GetGuestSettings | events.read |
+| Guest Service | GetGuestSettings、ListIssuedUrls | events.read |
 
 ### token_use = tenant_access を要求
 
