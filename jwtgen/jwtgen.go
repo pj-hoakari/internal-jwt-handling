@@ -246,14 +246,15 @@ func serviceContext(config Config, caller string, ttl time.Duration) internaljwt
 			IssuedAt:  jwt.NewNumericDate(now),
 			ID:        DefaultSourceJTI,
 		},
-		TokenUse:       internaljwt.TokenUseService,
-		ClientID:       caller,
-		Txn:            orDefault(config.Txn, newTxn()),
-		Scope:          "",
-		SourceJTI:      "",
-		OriginSub:      "",
-		TenantPublicID: "",
-		EventPublicID:  "",
+		TokenUse:        internaljwt.TokenUseService,
+		ClientID:        caller,
+		Txn:             orDefault(config.Txn, newTxn()),
+		Scope:           "",
+		SourceJTI:       "",
+		SourceExpiresAt: nil,
+		OriginSub:       "",
+		TenantPublicID:  "",
+		EventPublicID:   "",
 	}
 }
 

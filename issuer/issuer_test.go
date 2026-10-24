@@ -321,6 +321,10 @@ func TestIssueFromExternal(t *testing.T) {
 				t.Errorf("src_jti = %q, want %q", claims.SourceJTI, test.input.SourceJTI)
 			}
 
+			if claims.SourceExpiresAt == nil || !claims.SourceExpiresAt.Time.Equal(test.input.SourceExpiresAt.Truncate(time.Second)) {
+				t.Errorf("src_exp = %v, want %v", claims.SourceExpiresAt, test.input.SourceExpiresAt)
+			}
+
 			if claims.TenantPublicID != test.input.TenantPublicID {
 				t.Errorf("tenant_id = %q, want %q", claims.TenantPublicID, test.input.TenantPublicID)
 			}
@@ -606,6 +610,7 @@ func TestIssueUserOriginService(t *testing.T) {
 
 			assertPresent(t, raw, "scope", "src_jti", "origin_sub", "txn")
 			assertAbsent(t, raw, test.absent...)
+			assertAbsent(t, raw, "src_exp")
 		})
 	}
 }
@@ -812,7 +817,7 @@ func TestIssueMachineOriginService(t *testing.T) {
 
 			assertUUIDv7(t, claims.ID, "jti")
 			assertPresent(t, raw, "iss", "sub", "aud", "iat", "nbf", "exp", "jti", "txn", "token_use", "client_id")
-			assertAbsent(t, raw, "scope", "src_jti", "origin_sub", "tenant_id", "event_id")
+			assertAbsent(t, raw, "scope", "src_jti", "src_exp", "origin_sub", "tenant_id", "event_id")
 		})
 	}
 }
