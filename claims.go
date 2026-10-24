@@ -28,6 +28,7 @@ type Claims struct {
 	// this one was converted from: the external token at an external token
 	// conversion, the context token at a service re-issue.
 	SourceJTI string `json:"src_jti,omitempty"`
+	SourceExpiresAt *jwt.NumericDate `json:"src_exp,omitempty"`
 	// OriginSub is the user a user-origin service token was re-issued for. It
 	// is for audit only and must not feed authorization decisions.
 	OriginSub string `json:"origin_sub,omitempty"`

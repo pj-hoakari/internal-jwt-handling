@@ -29,6 +29,10 @@ func validateExternalOriginClaims(claims internaljwt.Claims) error {
 		return missingClaim("src_jti")
 	}
 
+	if claims.SourceExpiresAt == nil {
+		return missingClaim("src_exp")
+	}
+
 	if claims.OriginSub != "" {
 		return forbiddenClaim("origin_sub")
 	}

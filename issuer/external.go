@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 
 	internaljwt "github.com/pj-hoakari/internal-jwt-handling"
@@ -68,6 +69,7 @@ func (i *Issuer) externalTokenClaims(input ExternalTokenInput, now time.Time) (i
 		Txn:              txn.String(),
 		Scope:            input.Scope,
 		SourceJTI:        input.SourceJTI,
+		SourceExpiresAt:  jwt.NewNumericDate(input.SourceExpiresAt),
 		OriginSub:        "",
 		TenantPublicID:   input.TenantPublicID,
 		EventPublicID:    input.EventPublicID,

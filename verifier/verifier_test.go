@@ -198,14 +198,15 @@ func validClaims() internaljwt.Claims {
 			IssuedAt:  jwt.NewNumericDate(testNow),
 			ID:        "jti-1",
 		},
-		TokenUse:       internaljwt.TokenUseTenantAccess,
-		ClientID:       "client-1",
-		Txn:            "txn-1",
-		Scope:          testScope,
-		SourceJTI:      "src-jti-1",
-		OriginSub:      "",
-		TenantPublicID: testTenantPublicID,
-		EventPublicID:  "",
+		TokenUse:        internaljwt.TokenUseTenantAccess,
+		ClientID:        "client-1",
+		Txn:             "txn-1",
+		Scope:           testScope,
+		SourceJTI:       "src-jti-1",
+		SourceExpiresAt: jwt.NewNumericDate(testNow.Add(10 * time.Minute)),
+		OriginSub:       "",
+		TenantPublicID:  testTenantPublicID,
+		EventPublicID:   "",
 	}
 }
 

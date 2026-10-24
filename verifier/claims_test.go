@@ -17,6 +17,7 @@ func serviceClaims() internaljwt.Claims {
 	claims.ClientID = "tolo-observation"
 	claims.Scope = ""
 	claims.SourceJTI = ""
+	claims.SourceExpiresAt = nil
 	claims.OriginSub = ""
 	claims.TenantPublicID = ""
 	claims.EventPublicID = ""
@@ -142,6 +143,15 @@ func TestVerifyRejectsAnInvalidOriginClaim(t *testing.T) {
 				return claims
 			},
 			want: ErrMissingClaim, detail: "src_jti",
+		},
+		"an external token conversion without src_exp": {
+			claims: func() internaljwt.Claims {
+				claims := validClaims()
+				claims.SourceExpiresAt = nil
+
+				return claims
+			},
+			want: ErrMissingClaim, detail: "src_exp",
 		},
 		"an external token conversion carrying origin_sub": {
 			claims: func() internaljwt.Claims {
