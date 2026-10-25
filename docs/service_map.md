@@ -174,7 +174,7 @@ sequenceDiagram
   participant Obs as Observation
 
   Note over GS: 事前準備（起動時・周期）
-  GS->>GA: GetDisplayNames／GetQrLocations（表示名＋端点、QR 設置箇所）
+  GS->>GA: GetDisplayNames／GetQrLocations／GetGuideMapLayout（表示名＋端点、QR 設置箇所、案内マップレイアウト）
   GS->>Wx: 天候を周期取得（所在地は自サービスの設定）
 
   App->>Op: SendStaffMessage（audience=GUEST）

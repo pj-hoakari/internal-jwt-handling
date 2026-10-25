@@ -77,8 +77,8 @@ protoの採用版を固定し、更新時は機械的な互換性と、追加フ
 | 〃 | 〃 | ChangeTenantContract、ArchiveTenant、CreateEvent、TransitionEventStatus、ListEvents | 公開（管理 UI、ListEvents はスタッフアプリも） |
 | 〃 | 〃 | GetEvent | 内部オンリー（Graph Authoring の参照整合） |
 | 〃 | `tolo.relation.v1.RelationAdminService` | AddTenantMember、ChangeTenantRole、GrantEventRole、RevokeRole、ListMemberships | 公開（管理 UI。関係参照は Tenant Management が実装） |
-| Graph Authoring | `tolo.graph.v1.GraphAuthoringService` | SaveGraph、MapObservationPoint、AddQrLocation、UpdateQrLocation、RemoveQrLocation、GetGraph、PublishRevision | 公開（管理 UI） |
-| 〃 | `tolo.graph.v1.GraphSupplyService` | 全 RPC（GetCurrentRevision、GetObservationPointMappings、GetDisplayNames、GetGatePoints、GetQrLocations） | 内部オンリー（Observation・Guest Service） |
+| Graph Authoring | `tolo.graph.v1.GraphAuthoringService` | SaveGraph、MapObservationPoint、AddQrLocation、UpdateQrLocation、RemoveQrLocation、SaveGuideMapLayout、GetGraph、PublishRevision | 公開（管理 UI） |
+| 〃 | `tolo.graph.v1.GraphSupplyService` | 全 RPC（GetCurrentRevision、GetObservationPointMappings、GetDisplayNames、GetGatePoints、GetQrLocations、GetGuideMapLayout） | 内部オンリー（Observation・Guest Service） |
 | Observation | `tolo.observation.v1.MeasurementIngestService` | ReportMeasurements | 公開（エッジ端末）＋内部（Guest Service の QR 計上由来） |
 | 〃 | `tolo.observation.v1.EdgeDeviceService` | RegisterEdgeDevice、UnregisterEdgeDevice、ListEdgeDevices | 公開（管理 UI） |
 | 〃 | 〃 | Heartbeat | 公開（エッジ端末） |
@@ -97,7 +97,7 @@ protoの採用版を固定し、更新時は機械的な互換性と、追加フ
 | Notification | `tolo.notification.v1.NotificationService` | SendPush | 内部オンリー（Operation） |
 | 〃 | `tolo.notification.v1.DeviceTokenService` | RegisterDeviceToken、UnregisterDeviceToken | 公開（スタッフアプリ） |
 | Reference Aggregation | `tolo.refagg.v1.ReferenceAggregationService` | SubmitAnonymizedFeedback、GetReferenceValues | 内部オンリー（Operation 投入、Observation 取得） |
-| Guest Service | `tolo.guest.v1.GuestPageService` | 全 RPC（OpenGuestPage、GetCrowd、GetQueues、ListGuestMessages） | 公開（ゲスト。未認証） |
+| Guest Service | `tolo.guest.v1.GuestPageService` | 全 RPC（OpenGuestPage、GetCrowd、GetQueues、ListGuestMessages、GetGuideMap） | 公開（ゲスト。未認証） |
 | 〃 | `tolo.guest.v1.GuestSettingsService` | 全 RPC（GetGuestSettings、UpdateGuestSettings、ListIssuedUrls） | 公開（管理 UI） |
 
 補足
@@ -287,7 +287,7 @@ streamingの全件bufferingをせず、backpressureと切断を扱う。非冪�
 
 ### token_use = service を要求（サービス間）
 
-Tenant.GetEvent（テナント文脈必須）、Graph 供給系（GetCurrentRevision／GetObservationPointMappings／GetGatePoints／GetDisplayNames／GetQrLocations）、Observation の GetGuestSnapshot、Operation の RequestProposalDelivery／RecordFeedbackValues／ListStaffMessages（Guest Service の復旧時）、Notification.SendPush、Reference Aggregation の SubmitAnonymizedFeedback／GetReferenceValues、Observation.ReportMeasurements（Guest Service 由来）
+Tenant.GetEvent（テナント文脈必須）、Graph 供給系（GetCurrentRevision／GetObservationPointMappings／GetGatePoints／GetDisplayNames／GetQrLocations／GetGuideMapLayout）、Observation の GetGuestSnapshot、Operation の RequestProposalDelivery／RecordFeedbackValues／ListStaffMessages（Guest Service の復旧時）、Notification.SendPush、Reference Aggregation の SubmitAnonymizedFeedback／GetReferenceValues、Observation.ReportMeasurements（Guest Service 由来）
 
 Flow.Optimize と Line.GuideQueues は Service Gateway を経由しないため本表にない（到達制御で呼び出し元を Observation に限る直接呼び出し。Flow Control、Line Control）
 
