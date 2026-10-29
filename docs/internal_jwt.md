@@ -63,7 +63,7 @@ Gateway内部用受信口は、文脈内部JWTの `aud` を呼び出し元サー
 | claim | 型 | 内容 |
 |---|---|---|
 | `iss` | string | 発行者識別子 |
-| `sub` | string | 主体。ユーザー系は user_id、サービス系は呼び出し元サービスの識別子（新規マシン起点では申告された論理サービスID） |
+| `sub` | string | 主体。ユーザー系は user_id（IdP が発行する不変の識別子。ADR-0117）、サービス系は呼び出し元サービスの識別子（新規マシン起点では申告された論理サービスID） |
 | `aud` | string | 宛先の論理識別子（宛先サービス単位。1 トークン 1 audience） |
 | `iat` | NumericDate | 発行時刻 |
 | `nbf` | NumericDate | 有効化時刻 |
@@ -100,7 +100,7 @@ Gateway内部用受信口は、文脈内部JWTの `aud` を呼び出し元サー
 | `tenant_access` | テナント文脈での操作 | `tenant_id`（必須） |
 | `event_access` | イベント文脈での操作 | `tenant_id`、`event_id`（いずれも必須） |
 | `service` | サービス間呼び出し | ユーザー起点: `tenant_id`（および `event_id`）を文脈トークンから引き写す。マシン起点: `tenant_id`／`event_id` を持たない |
-| `registration` | 仮テナントの所有権取得 | なし（`tenant_id`を持たない） |
+| `registration` | 仮テナントの所有権取得と招待の受諾 | なし（`tenant_id`を持たない） |
 
 ### tenant_id／event_id クレーム
 
@@ -116,7 +116,7 @@ Gateway内部用受信口は、文脈内部JWTの `aud` を呼び出し元サー
 - 公開 ID はいずれもランダムな 16 文字 hex の文字列であり、内部で用いる UUIDv7 等の内部 ID ではない。テナント・イベント操作の識別にはこの公開 ID を用いる。
 - 全サービスの proto の `tenant_id`／`event_id` フィールドも公開 ID を値に取る。クレームとフィールドは同名かつ同義であり、そのまま突合できる。内部主キー（UUIDv7）は各サービスの内部に閉じ、proto にも本クレームにも現れない。
 - `registration`の内部JWTは`tenant_id`／`event_id`を持たない。
-  対象テナントはClaimTenantOwnershipのリクエストと一回限りの所有権取得トークンで指定し、IdPのAccess Tokenにはテナント文脈を持たせない。
+  対象テナントはClaimTenantOwnershipまたはAcceptTenantInvitationのリクエストと、一回限りの所有権取得トークンまたは招待トークンで指定し、IdPのAccess Tokenにはテナント文脈を持たせない。
 
 ### 認可に用いてよいクレーム
 
