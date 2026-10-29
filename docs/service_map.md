@@ -59,7 +59,7 @@ flowchart LR
 
   %% 認証（OIDC。GW を経由しない唯一の HTTP）
   StaffApp -. "ログイン・Token Exchange（認可コード＋PKCE、DPoP）" .-> Auth
-  AdminUI -. "アカウント登録／ログイン／所有権取得専用トークン" .-> Auth
+  AdminUI -. "アカウント登録／ログイン／registration トークン" .-> Auth
   EdgeDev -. "ログイン・Token Exchange・自動更新（認可コード＋PKCE、DPoP）" .-> Auth
 
   %% クライアント → GW → 各サービス
@@ -107,7 +107,7 @@ flowchart LR
 - introspection は管理系書き込み6 RPCの active／revoked 確認に限定し、同じ6 RPCの現在権限は Tenant Management が同一 DB で確認する
 - Flow／Line の呼び出し元は観測のみで、この呼び出しは Service Gateway を経由しない（各仕様参照）。Flow／Line の型も観測の外へ出さず、Operation・Reference Aggregation とは各サービスの型で受け渡す（観測が変換する）。Realtime・Notification は Operation の支援機構である（独立コンテキストではない）
 - Firestore の読み取り（Realtime の変更検知、WebRTC シグナリング）は Firebase Auth カスタムトークンによるアクセス制御を伴う（Realtime、Edge Bridge Service）
-- 関係参照（RelationAdminService）はTenant Managementが実装する。ClaimTenantOwnershipのオーナー所属作成はサービス内部で完結し、サービス間RPCを経ない
+- 関係参照（RelationAdminService）はTenant Managementが実装する。ClaimTenantOwnershipのオーナー所属作成とAcceptTenantInvitationの所属作成はサービス内部で完結し、サービス間RPCを経ない
 - ゲート開閉（OperateGate）・観測点設定変更（UpdateObservationPointConfig）はスタッフアプリから Observation を直接呼び出す。Operation→Observation の同期 RPC はない
 - Reference Aggregation はどのテナント保護境界にも属さず、入出力にテナント識別子を持たない
 
@@ -209,11 +209,40 @@ sequenceDiagram
   TM-->>User: tenant_id・所有権取得トークン・expires_at
   User->>IdP: POST /api/signup
   User->>IdP: テナント未指定のAuthorization Code Flow
-  IdP-->>User: registration Access Token（scope=tenant.claim）
+  IdP-->>User: registration Access Token（scope=tenant.join）
   User->>GW: ClaimTenantOwnership<br/>registration Token＋所有権取得トークン＋サブドメイン名
   GW->>TM: 主体を維持した内部JWTへ変換して転送
   TM->>TM: トークン検証・オーナー所属・owned遷移・サブドメイン名の確定・取得トークン消費
   TM-->>User: ownedのTenant
+  User->>IdP: tenantId指定で再認可
+  IdP-->>User: tenant_access
+```
+
+
+### 2.4 招待によるスタッフの参加
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Owner as オーナー（管理 UI）
+  participant User as 招待された人（Web）
+  participant GW as Service Gateway
+  participant TM as Tenant Management
+  participant IdP as Auth（IdP）
+
+  Owner->>GW: CreateTenantInvitation（tenant_access + tenant.write）
+  GW->>TM: 内部JWTへ変換して転送
+  TM->>TM: 現在権限の確認・招待の作成<br/>招待トークンのハッシュを保存
+  TM-->>Owner: 招待・招待トークン
+  Owner-->>User: 招待 URL を渡す
+  User->>User: 招待トークンを BFF のセッションへ移す
+  User->>IdP: POST /api/signup または POST /api/login
+  User->>IdP: テナント未指定のAuthorization Code Flow
+  IdP-->>User: registration Access Token（scope=tenant.join）
+  User->>GW: AcceptTenantInvitation<br/>registration Token＋招待トークン
+  GW->>TM: 主体を維持した内部JWTへ変換して転送
+  TM->>TM: 招待の検証・所属の作成・招待トークンの消費
+  TM-->>User: Membership
   User->>IdP: tenantId指定で再認可
   IdP-->>User: tenant_access
 ```
