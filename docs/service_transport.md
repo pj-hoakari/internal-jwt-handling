@@ -4,7 +4,7 @@
 
 本仕様はService Gatewayに到達するサービス間RPC、Gatewayから後段への転送、ObservationからFlow Control／Line Controlへの直接RPCに適用する。
 外部クライアントのIdP認証・DPoP、AuthのHTTP API、Edge Bridge ServiceのFirestore認証、PubSubへのpublishのブローカー認証は別の契約とする。
-情報更新pushの受け口は、到達制御を本仕様の表に、受け口の規約を「情報更新 push の受け口」に定める。
+情報更新pushの受信エンドポイントは、到達制御を本仕様の表に、受信エンドポイントの規約を「情報更新 push の受信エンドポイント」に定める。
 
 アプリはワークロード資格情報の取得・検証を行わない。
 サービス間RPCを受けてよい呼び出し元の制限はプラットフォームが担い、Cloud Runではingressと専用SAへのInvoker IAM、Composeではコンテナネットワークの分離とホストへのポート非公開で行う。
@@ -22,7 +22,7 @@
 | Gateway内部用 | サービスA（Gatewayを呼ぶ全サービス） | ingressを内部に限り、各サービスの実行SAにだけInvokerを付与する | 内部用listenerをホストへ公開せず、サービス用ネットワークにだけ接続する |
 | 通常バックエンド | Gateway | ingressを内部に限り、Gateway公開用・内部用の実行SAにだけInvokerを付与する | Gatewayと同じネットワークにだけ接続し、ホストへ公開しない |
 | Flow Control／Line Control | Observation | ingressを内部に限り、Observationの実行SAにだけInvokerを付与する | Observationとだけ共有するネットワークに接続し、ホストへ公開しない |
-| 情報更新pushの受け口 | ブローカーのpush（Cloud Run）、中継（Compose） | push subscriptionにpush用SAのOIDCトークンを付け、push用SAにだけ購読する側のInvokerを付与する | 中継と同じネットワークにだけ接続し、ホストへ公開しない |
+| 情報更新pushの受信エンドポイント | ブローカーのpush（Cloud Run）、中継（Compose） | push subscriptionにpush用SAのOIDCトークンを付け、push用SAにだけ購読する側のInvokerを付与する | 中継と同じネットワークにだけ接続し、ホストへ公開しない |
 
 各サービスに専用の実行SAを割り当て、SA秘密鍵ファイルをイメージ・環境変数・配布用secretへ格納しない。
 Cloud RunでIAMを有効にした宛先へ送る呼び出し元は、メタデータサーバまたは対応ライブラリから宛先用Google IDトークンを取得し、`X-Serverless-Authorization: Bearer <token>` で送る。
@@ -73,10 +73,10 @@ Gatewayは内部用受信口で呼び出し元を決めた後、辺ポリシー�
 匿名のStartTenantRegistration、ResolveTenantSubdomain、GuestのGuestPageServiceでも、Gatewayから後段への転送は到達制御を通る経路で行い、Authorizationの内部JWTだけを省略する。
 各ホップでは、その時点の送信者が宛先に応じた内部JWTを新たに設定し、Cloud Runでは宛先用Google IDトークンも新たに設定する。受信した資格情報を後段へ転送しない。
 
-## 情報更新 push の受け口
+## 情報更新 push の受信エンドポイント
 
-購読する側は情報更新pushをHTTPの受け口で受ける。受け口はConnectのサービスと同じHTTPサーバに、通常のHTTPハンドラとして載せる。パスはトピックごとに購読する側の仕様に定める。
-受け口はService Gatewayを経由せず、内部JWTを要求しない。到達を許す呼び出し元の制限は「到達制御」の表のとおりプラットフォームに任せ、アプリは認証しない。
+購読する側は情報更新pushをHTTPの受信エンドポイントで受ける。受信エンドポイントはConnectのサービスと同じHTTPサーバに、通常のHTTPハンドラとして載せる。パスはトピックごとに購読する側の仕様に定める。
+受信エンドポイントはService Gatewayを経由せず、内部JWTを要求しない。到達を許す呼び出し元の制限は「到達制御」の表のとおりプラットフォームに任せ、アプリは認証しない。
 
 | 項目 | 規約 |
 |---|---|
@@ -85,9 +85,9 @@ Gatewayは内部用受信口で呼び出し元を決めた後、辺ポリシー�
 | ヘッダ | `x-goog-pubsub-message-id`（メッセージID）、`x-goog-pubsub-ordering-key`（順序キー＝`event_id`）、`x-goog-pubsub-publish-time`（publish時刻） |
 
 Cloud Runでは、Cloud Pub/Subのpush subscriptionでpayload unwrappingとwrite metadataを有効にし、上の形で届ける。
-Google Cloud以外の環境では、NATS JetStreamから読む共有の中継が、上の形で受け口へPOSTする。中継はトピックごとにdurable consumerを持ち、未ackのメッセージを1件に限り（`MaxAckPending=1`）、受け口の応答が2xxならack、それ以外ならnakする。
+Google Cloud以外の環境では、NATS JetStreamから読む共有の中継が、上の形で受信エンドポイントへPOSTする。中継はトピックごとにdurable consumerを持ち、未ackのメッセージを1件に限り（`MaxAckPending=1`）、受信エンドポイントの応答が2xxならack、それ以外ならnakする。
 
-受け口の応答は次のとおりとする。
+受信エンドポイントの応答は次のとおりとする。
 
 | 状況 | 応答 | ブローカーの扱い |
 |---|---|---|
@@ -111,7 +111,7 @@ ConnectのInterceptorは認可・監査等の共有部品と接続し、認証�
 listener方式と論理サービスIDは監査可能な起動情報として記録し、トークン本体は記録しない。
 Cloud Runでは、Gateway公開用・内部用と各サービスのingress、Invoker IAM、`X-Serverless-Authorization` と内部JWTの共存、h2cを実環境で確認する。
 Composeでは、内部用listenerと各サービスのポートがホストへ公開されていないこと、ネットワークの分離どおりにしか到達できないことを確認する。
-Cloud Runでは、push subscriptionから購読する側の受け口へ届くことを、ingressとInvoker IAMの設定と合わせて実環境で確認する。
+Cloud Runでは、push subscriptionから購読する側の受信エンドポイントへ届くことを、ingressとInvoker IAMの設定と合わせて実環境で確認する。
 ComposeとCloud Run間でRPCを越境させる相互運用は対象外とする。移行は原則として呼び出しが環境内に閉じる単位で行う。
 
 ## 関連仕様
