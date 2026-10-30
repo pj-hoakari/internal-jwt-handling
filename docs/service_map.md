@@ -1,6 +1,6 @@
 # サービス間の関係と主要なやり取り（図）
 
-位置づけ: サービス（デプロイ単位）視点の図。ドメイン（コンテキスト）視点は domain/context_map.md が正本
+位置づけ: サービス（デプロイ単位）視点の図。ドメイン（コンテキスト）視点は domain/context_map.md で扱う
 内容の根拠: spec-base/README.md（通信規約・索引）と service/ 各仕様。図と本文が食い違う場合は各仕様を正とする
 
 図のService Gatewayは論理的な1サービスを表す。Composeは公開用と内部用の2listenerを持つ1配備、Cloud Runは公開用と内部用の2配備とする。
