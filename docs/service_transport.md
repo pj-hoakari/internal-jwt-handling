@@ -87,6 +87,11 @@ Gatewayは内部用受信口で呼び出し元を決めた後、辺ポリシー�
 Cloud Runでは、Cloud Pub/Subのpush subscriptionでpayload unwrappingとwrite metadataを有効にし、上の形で届ける。
 Google Cloud以外の環境では、NATS JetStreamから読む共有の中継が、上の形で受信エンドポイントへPOSTする。中継はトピックごとにdurable consumerを持ち、未ackのメッセージを1件に限り（`MaxAckPending=1`）、受信エンドポイントの応答が2xxならack、それ以外ならnakする。
 
+トレースの文脈はW3C Trace Contextの`traceparent`、`tracestate`、`baggage`をHTTPヘッダで受信エンドポイントへ渡す。
+publishする側はpublish時の文脈を同じ名前でメッセージのメタデータ（NATSではヘッダ）に入れる。
+中継はメッセージの文脈を親としてspanを作り、そのspanの文脈をヘッダに付けてPOSTする。
+受信エンドポイントは、ヘッダに文脈があればそれを親として処理のspanを作り、なければ新しいトレースを始める。
+
 受信エンドポイントの応答は次のとおりとする。
 
 | 状況 | 応答 | ブローカーの扱い |
