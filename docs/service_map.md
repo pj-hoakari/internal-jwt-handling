@@ -17,6 +17,7 @@ Cloud Runの公開用GatewayはInvoker IAMを無効化してRPCごとに外部�
 - BFF は図では省略する（管理 UI と観測ページの Auth・GW・Edge Bridge Service への接続は BFF 経由。外部トークンは BFF のサーバ側に保持し、ブラウザへ渡さない）
   スタッフアプリはログインも Token Exchange も直接 Auth と行う（public client の直接交換。トークンは DPoP で鍵束縛）。API 呼び出しはアプリ→GW のまま
   観測ページの Heartbeat と計測報告は BFF を通るため、BFF は現場運用の経路上にある（ADR-0088）
+  ESP カメラは BFF を挟まず、Auth の Device Authorization と Edge Bridge Service を直接呼ぶ（ADR-0127）
 
 ## 1. サービス間の関係全体図
 
@@ -25,7 +26,8 @@ flowchart LR
   subgraph CL["クライアント"]
     StaffApp["スタッフアプリ"]
     AdminUI["管理 UI（オーナー／スタッフ）"]
-    EdgeDev["エッジ端末（ブラウザ）"]
+    EdgeDev["観測ページ端末（推論デバイス）"]
+    ESPCam["ESP カメラ"]
     GuestBr["ゲスト（ブラウザ／サイネージ）"]
   end
 
@@ -61,6 +63,7 @@ flowchart LR
   StaffApp -. "ログイン・Token Exchange（認可コード＋PKCE、DPoP）" .-> Auth
   AdminUI -. "アカウント登録／ログイン／registration トークン" .-> Auth
   EdgeDev -. "ログイン・Token Exchange・自動更新（認可コード＋PKCE、DPoP）" .-> Auth
+  ESPCam -. "Device Authorization（events.stream）" .-> Auth
 
   %% クライアント → GW → 各サービス
   StaffApp -- "全 RPC（Operation・Observation・Realtime.Fetch・Notification.トークン管理 等）" --> GW
@@ -68,7 +71,9 @@ flowchart LR
   EdgeDev -- "計測値送信・Heartbeat（event_access）" --> GW
   EdgeDev -. "シグナリング" .- EB
   AdminUI -. "シグナリング" .- EB
+  ESPCam -. "シグナリング" .- EB
   EdgeDev -. "映像（P2P。サービスを介さない）" .- AdminUI
+  EdgeDev -. "カメラ映像（P2P。サービスを介さない）" .- ESPCam
   GuestBr -- "ゲスト用ページ（HTTP・未認証）" --> GW
   GW --> SV
 
@@ -246,3 +251,39 @@ sequenceDiagram
   User->>IdP: tenantId指定で再認可
   IdP-->>User: tenant_access
 ```
+
+### 2.5 ESP カメラの登録・認可・接続
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Staff as 設置者（管理 UI）
+  participant BFF as BFF
+  participant Obs as Observation
+  participant IdP as Auth（IdP）
+  participant ESP as ESP カメラ
+  participant EB as Edge Bridge Service
+  participant Page as 観測ページ（推論デバイス）
+
+  Staff->>BFF: ESP カメラを登録（イベント、表示名、紐づけ先）
+  BFF->>Obs: RegisterEdgeDevice（kind=CAMERA）
+  Obs-->>BFF: edge_device_id、登録状態
+  Staff->>ESP: Web Serial で Wi-Fi、signaling、Firebase、edge_device_id を書込
+  ESP->>IdP: Device Authorization（client_id、scope=events.stream）
+  IdP-->>ESP: device_code、user_code
+  ESP-->>Staff: user_code をシリアル出力
+  Staff->>BFF: user_code と選択カメラを承認
+  BFF->>Obs: 端末の所属・種別・登録状態を確認
+  BFF->>IdP: device-authorization/approve（user_code、event_id、edge_device_id）
+  IdP-->>ESP: event_access、Refresh Token（polling）
+  Page->>BFF: 観測ページのセッション（接続用 client のトークンを保持）
+  BFF->>EB: RequestConnection（委任されたカメラ）
+  EB-->>BFF: session_id
+  BFF->>EB: IssueFirestoreToken（edge_device_id、session_id）
+  EB-->>BFF: console 用 Firestore トークン（session 束縛）
+  ESP->>EB: IssueFirestoreToken（events.stream）
+  EB-->>ESP: edge 用 Firestore トークン（edge_device_id 束縛）
+  Page->>ESP: SDP/ICE を Firestore で交換し、映像を P2P で受信
+```
+
+カメラ端末の登録解除とイベント終了では、BFF が先に IdP の `device-authorization/revoke` を成功させ、その後に Observation の登録解除またはイベント状態の変更を確定する。IdP に失効を記録できなければ、カメラの解除とイベント終了は完了しない。観測ページ端末の登録解除は既存の手順のままとする。
