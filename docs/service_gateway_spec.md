@@ -81,9 +81,9 @@ protoの採用版を固定し、更新時は機械的な互換性と、追加フ
 | 〃 | 〃 | AddTenantMember | 内部オンリー |
 | Graph Authoring | `tolo.graph.v1.GraphAuthoringService` | SaveGraph、MapObservationPoint、AddQrLocation、UpdateQrLocation、RemoveQrLocation、SaveGuideMapLayout、GetGraph、PublishRevision | 公開（管理 UI） |
 | 〃 | `tolo.graph.v1.GraphSupplyService` | 全 RPC（GetCurrentRevision、GetObservationPointMappings、GetDisplayNames、GetGatePoints、GetQrLocations、GetGuideMapLayout） | 内部オンリー（Observation・Guest Service） |
-| Observation | `tolo.observation.v1.MeasurementIngestService` | ReportMeasurements | 公開（エッジ端末）＋内部（Guest Service の QR 計上由来） |
+| Observation | `tolo.observation.v1.MeasurementIngestService` | ReportMeasurements | 公開（観測ページ端末）＋内部（Guest Service の QR 計上由来） |
 | 〃 | `tolo.observation.v1.EdgeDeviceService` | RegisterEdgeDevice、UnregisterEdgeDevice、ListEdgeDevices | 公開（管理 UI） |
-| 〃 | 〃 | Heartbeat | 公開（エッジ端末） |
+| 〃 | 〃 | Heartbeat | 公開（観測ページ端末） |
 | 〃 | 〃 | UpdateObservationPointConfig | 公開（スタッフアプリ） |
 | 〃 | `tolo.observation.v1.ManualInterventionService` | 全 RPC（OperateGate、ToggleDangerFlag、RegisterScheduleEvent、ReportCongestion、CorrectQueue） | 公開（スタッフアプリ） |
 | 〃 | `tolo.observation.v1.StatusQueryService` | GetEventOverview | 公開（スタッフアプリ） |
@@ -113,7 +113,7 @@ protoの採用版を固定し、更新時は機械的な互換性と、追加フ
 | 経路 | 外部資格情報 | 動作 |
 |---|---|---|
 | ユーザー（テナント文脈） | `tenant_access`（IdP 発行） | 検証＋内部 JWT へ変換 |
-| ユーザー（イベント文脈） | `event_access`（IdP 発行） | 検証＋内部 JWT へ変換。エッジ端末（観測ページ）もこの経路 |
+| ユーザー（イベント文脈） | `event_access`（IdP 発行） | 検証＋内部 JWT へ変換。観測ページ端末もこの経路。ESP カメラは Edge Bridge Service を直接呼ぶ |
 | 仮テナント作成 | なし（未認証） | パススルー。StartTenantRegistrationだけを許可し、匿名作成の保護を適用 |
 | サブドメイン名の解決 | なし（未認証） | パススルー。ResolveTenantSubdomainだけを許可し、レート制限を適用 |
 | 仮テナントの所有権取得、招待の受諾 | `registration`（IdP 発行。テナント文脈を持たない最小トークン） | 検証＋内部 JWT へ変換 |
