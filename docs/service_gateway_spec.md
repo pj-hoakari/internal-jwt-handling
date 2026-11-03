@@ -336,6 +336,10 @@ ResolveTenantSubdomainには、レート制限とリクエストサイズ上限�
 | introspection 不達（対象 6 RPC のみ fail closed） | unauthenticated |
 | 宛先サービス不達 | unavailable（透過） |
 | 宛先サービスが内部 JWT の検証鍵を解決できない（JWKS の取得失敗、その再試行を控えている間） | unavailable（透過） |
+| 内部 JWT を付けて転送した要求に、宛先サービスが unauthenticated を返した | internal |
+
+宛先サービスが返す unauthenticated は、転送した内部 JWT を宛先サービスが受け入れなかったことを表す。Service Gateway と宛先サービスの間の不整合であり、利用者が直せる認証の失敗ではないため、unauthenticated のまま透過せず internal を返す。内部 JWT を付けずに転送するパススルーの要求では透過する。
+宛先サービスは内部 JWT の拒否以外に unauthenticated を使わない。所有権取得トークンや招待トークンのような、認証済みの利用者が提示する業務上の資格情報の拒否には permission_denied を使う。
 
 ## 監査ログ
 
