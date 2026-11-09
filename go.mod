@@ -6,7 +6,7 @@ require (
 	connectrpc.com/connect/v2 v2.0.2
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
-	github.com/pj-hoakari/protoc-gen-authz-go v0.3.0
+	github.com/pj-hoakari/protoc-gen-authz-go v0.4.1
 )
 
 require google.golang.org/protobuf v1.36.12 // indirect
