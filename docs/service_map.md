@@ -268,6 +268,10 @@ sequenceDiagram
   Staff->>BFF: ESP カメラを登録（イベント、表示名、紐づけ先）
   BFF->>Obs: RegisterEdgeDevice（kind=CAMERA）
   Obs-->>BFF: edge_device_id、登録状態
+  Staff->>ESP: Web Serial で状態を問い合わせ
+  ESP-->>Staff: 状態（映像方式を含む）
+  Staff->>BFF: 映像方式を申告
+  BFF->>Obs: ReportCameraTransport（映像方式。紐づけの制約に反すれば拒否）
   Staff->>ESP: Web Serial で Wi-Fi、signaling、Firebase、edge_device_id を書込
   ESP->>IdP: Device Authorization（client_id、scope=events.stream）
   IdP-->>ESP: device_code、user_code
