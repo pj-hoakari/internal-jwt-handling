@@ -212,7 +212,8 @@ sequenceDiagram
   GW->>TM: 認証メタデータなしで転送
   TM->>TM: pending_ownerの仮テナント作成<br/>取得トークンのハッシュを保存
   TM-->>User: tenant_id・所有権取得トークン・expires_at
-  User->>IdP: 仮テナントを指定したAuthorization Code Flow（scope=tenant.join）
+  User->>IdP: 仮テナントと所有権取得トークンを指定したAuthorization Code Flow（scope=tenant.join）
+  IdP->>TM: 所有権取得トークンの有効性を照会（消費しない）
   User->>IdP: POST /api/signup（仮テナントにアカウント作成）
   IdP-->>User: registration Access Token（scope=tenant.join）
   User->>GW: ClaimTenantOwnership<br/>registration Token＋所有権取得トークン＋サブドメイン名
@@ -241,7 +242,8 @@ sequenceDiagram
   TM-->>Owner: 招待・招待トークン
   Owner-->>User: 招待 URL を渡す
   User->>User: 招待トークンを BFF のセッションへ移す
-  User->>IdP: 招待先のテナントを指定したAuthorization Code Flow（scope=tenant.join）
+  User->>IdP: 招待先のテナントと招待トークンを指定したAuthorization Code Flow（scope=tenant.join）
+  IdP->>TM: 招待トークンの有効性を照会（消費しない）
   User->>IdP: POST /api/signup または POST /api/login（招待先のテナントのアカウント）
   IdP-->>User: registration Access Token（scope=tenant.join）
   User->>GW: AcceptTenantInvitation<br/>registration Token＋招待トークン
