@@ -68,7 +68,7 @@ flowchart LR
   %% クライアント → GW → 各サービス
   StaffApp -- "全 RPC（Operation・Observation・Realtime.Fetch・Notification.トークン管理 等）" --> GW
   AdminUI -- "匿名の仮テナント作成・所有権取得・Tenant管理・Graph編集・エッジ登録・観測設定値" --> GW
-  EdgeDev -- "計測値送信・Heartbeat（event_access）" --> GW
+  EdgeDev -- "計測値送信・Heartbeat・観測点の追加（event_access）" --> GW
   EdgeDev -. "シグナリング" .- EB
   AdminUI -. "シグナリング" .- EB
   ESPCam -. "シグナリング" .- EB

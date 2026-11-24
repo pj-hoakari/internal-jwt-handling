@@ -83,7 +83,7 @@ protoの採用版を固定し、更新時は機械的な互換性と、追加フ
 | 〃 | `tolo.graph.v1.GraphSupplyService` | 全 RPC（GetCurrentRevision、GetObservationPointMappings、GetDisplayNames、GetGatePoints、GetQrLocations、GetGuideMapLayout） | 内部オンリー（Observation・Guest Service） |
 | Observation | `tolo.observation.v1.MeasurementIngestService` | ReportMeasurements | 公開（観測ページ端末）＋内部（Guest Service の QR 計上由来） |
 | 〃 | `tolo.observation.v1.EdgeDeviceService` | RegisterEdgeDevice、UnregisterEdgeDevice、ReportCameraTransport、ListEdgeDevices | 公開（管理 UI） |
-| 〃 | 〃 | Heartbeat | 公開（観測ページ端末） |
+| 〃 | 〃 | Heartbeat、ListEdgeDeviceObservationPoints、AddObservationPoint | 公開（観測ページ端末） |
 | 〃 | 〃 | UpdateObservationPointConfig | 公開（スタッフアプリ） |
 | 〃 | `tolo.observation.v1.ManualInterventionService` | 全 RPC（OperateGate、ToggleDangerFlag、RegisterScheduleEvent、ReportCongestion、CorrectQueue） | 公開（スタッフアプリ） |
 | 〃 | `tolo.observation.v1.StatusQueryService` | GetEventOverview | 公開（スタッフアプリ） |
@@ -268,7 +268,7 @@ streamingの全件bufferingをせず、backpressureと切断を扱う。非冪�
 | Graph Authoring | GetGraph | events.read |
 | Observation | RegisterEdgeDevice、UnregisterEdgeDevice、ReportCameraTransport、UpdateObservationSettings | events.manage |
 | Observation | OperateGate、UpdateObservationPointConfig、ToggleDangerFlag、RegisterScheduleEvent、ReportCongestion、CorrectQueue | events.operate |
-| Observation | ReportMeasurements、Heartbeat、ListEdgeDeviceObservationPoints | events.report |
+| Observation | ReportMeasurements、Heartbeat、ListEdgeDeviceObservationPoints、AddObservationPoint | events.report |
 | Observation | ListEdgeDevices、GetEventOverview、GetObservationSettings | events.read |
 | Operation | SendStaffMessage、RevokeStaffMessage、ShareGuidanceInfo、DirectReassignment、ApplyReassignment | events.operate |
 | Operation | ListStaffMessages、ListReassignments、GetHistoryDigest、UpdateConnectionState | events.read |
